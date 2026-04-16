@@ -15,11 +15,12 @@ import { Navbar } from '@/components/navbar'
 import { Footer } from '@/components/footer'
 import { ComparisonCard } from '@/components/comparison-card'
 import { Card, CardContent } from '@/components/ui/card'
-import { getWindows, getBestWindow, getTopWindows, getWindowAtTime } from '@/lib/mockData'
+import { getBestWindow, getTopWindows, getWindowAtTime } from '@/lib/mockData'
+import { useWeatherData } from '@/hooks/use-weather-data'
 import { ACTIVITY_CONFIG } from '@/lib/types'
 
 export default function ComparePage() {
-  const windows = useMemo(() => getWindows('Madrid'), [])
+  const { windows } = useWeatherData('Madrid')
   const bestWindow = useMemo(() => getBestWindow(windows, 'run'), [windows])
   const topWindows = useMemo(() => getTopWindows(windows, 'run', 5), [windows])
   const usualWindow = useMemo(() => getWindowAtTime(windows, '17:00', 0), [windows])

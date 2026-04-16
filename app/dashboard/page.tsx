@@ -13,8 +13,9 @@ import { FactorChart } from '@/components/factor-chart'
 import { InsightPanel } from '@/components/insight-panel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { getWindows, getTopWindows, getWindowAtTime } from '@/lib/mockData'
+import { getTopWindows, getWindowAtTime } from '@/lib/mockData'
 import { scoreWindow } from '@/lib/scoring'
+import { useWeatherData } from '@/hooks/use-weather-data'
 import type { UserPreferences, TimeWindow, Activity } from '@/lib/types'
 
 // Default preferences matching demo state
@@ -34,10 +35,8 @@ export default function DashboardPage() {
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Get windows for the selected city
-  const windows = useMemo(() => {
-    return getWindows(preferences.city)
-  }, [preferences.city])
+  // Get windows for the selected city (live API with mock fallback)
+  const { windows, loading, isLive } = useWeatherData(preferences.city)
 
   // Recalculate scores based on preferences
   const scoredWindows = useMemo(() => {
@@ -127,6 +126,8 @@ export default function DashboardPage() {
                 </h1>
                 <p className="text-muted-foreground">
                   Optimal windows for {preferences.activity} in {preferences.city}
+                  {isLive && <span className="ml-2 inline-flex items-center gap-1 text-xs text-green-500 font-medium"><span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />Live</span>}
+                  {loading && <span className="ml-2 text-xs text-muted-foreground">Loading weather data...</span>}
                 </p>
               </motion.div>
 

@@ -6,11 +6,12 @@ import { Navbar } from '@/components/navbar'
 import { Footer } from '@/components/footer'
 import { SchedulerChat } from '@/components/scheduler-chat'
 import { WeatherCalendar } from '@/components/weather-calendar'
-import { getWindows, getBestWindow } from '@/lib/mockData'
+import { getBestWindow } from '@/lib/mockData'
+import { useWeatherData } from '@/hooks/use-weather-data'
 import type { ScheduledEvent, TimeWindow } from '@/lib/types'
 
 export default function SchedulerPage() {
-  const windows = useMemo(() => getWindows('Madrid'), [])
+  const { windows } = useWeatherData('Madrid')
   const bestWindow = useMemo(() => getBestWindow(windows, 'run'), [windows])
   
   // Pre-seed with one event
