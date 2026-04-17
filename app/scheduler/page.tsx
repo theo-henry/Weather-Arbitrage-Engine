@@ -75,21 +75,21 @@ function SchedulerContent() {
   )
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background overflow-hidden">
       <Navbar />
 
-      <main className="flex-1 pt-16">
-        <div className="h-[calc(100vh-4rem)] flex flex-col lg:flex-row">
+      <main className="mt-16 h-[calc(100vh-4rem)] overflow-hidden">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden lg:flex-row">
           {/* Chat Panel */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="lg:w-[380px] flex-shrink-0 border-b lg:border-b-0 lg:border-r border-border/50 bg-card/50 h-[40vh] lg:h-full"
+            className="h-2/5 min-h-0 flex-shrink-0 overflow-hidden border-b border-border/50 bg-card/50 lg:h-full lg:w-[380px] lg:border-b-0 lg:border-r"
           >
             <SchedulerChat
               city={city}
               windows={windows}
-              className="h-full"
+              className="h-full min-h-0"
             />
           </motion.div>
 
@@ -97,13 +97,13 @@ function SchedulerContent() {
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex-1 h-[60vh] lg:h-full overflow-hidden"
+            className="h-3/5 min-h-0 flex-1 overflow-hidden lg:h-full"
           >
             <WeeklyCalendar
               windows={windows}
               onCreateEvent={handleCreateEvent}
               onEditEvent={handleEditEvent}
-              className="h-full"
+              className="h-full min-h-0"
             />
           </motion.div>
         </div>

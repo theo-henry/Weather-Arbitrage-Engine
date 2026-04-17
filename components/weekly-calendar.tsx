@@ -342,7 +342,7 @@ export function WeeklyCalendar({
   const todayIndex = days.findIndex((d) => isToday(d))
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
+    <div className={cn('flex h-full min-h-0 flex-col overflow-hidden', className)}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 flex-shrink-0">
         <div className="flex items-center gap-2">

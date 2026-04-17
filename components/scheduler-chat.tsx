@@ -227,7 +227,7 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
     message.pendingOperations === pendingOperations
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
+    <div className={cn('flex h-full min-h-0 flex-col overflow-hidden', className)}>
       <div className="flex items-center gap-3 p-4 border-b border-border/50">
         <div className="relative">
           <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-amber-500 flex items-center justify-center">
@@ -245,7 +245,7 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
         </div>
       </div>
 
-      <ScrollArea ref={scrollRef} className="flex-1 p-4">
+      <ScrollArea ref={scrollRef} className="min-h-0 flex-1 p-4">
         <div className="space-y-4">
           <AnimatePresence>
             {messages.map((message) => (
