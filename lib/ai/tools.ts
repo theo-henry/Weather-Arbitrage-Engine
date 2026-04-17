@@ -8,6 +8,7 @@ import type {
   PendingCalendarOperation,
   TimeWindow,
 } from '@/lib/types'
+import { computeProtectedEventAnalyses } from '@/lib/weather-suggestions'
 import type { LLMToolDefinition } from './provider'
 
 type ScorableActivity = keyof TimeWindow['scores']
@@ -317,6 +318,17 @@ function getToolDeclarations(): LLMToolDefinition[] {
       },
     },
     {
+      name: 'list_at_risk_events',
+      description: 'List weather-risk events and their best suggested same-day move.',
+      parameters: {
+        type: 'object',
+        properties: {
+          relative_day: { type: 'string', enum: ['today', 'tomorrow'] },
+          limit: { type: 'integer' },
+        },
+      },
+    },
+    {
       name: 'draft_create_event',
       description: 'Draft a new calendar event proposal. This does not apply the change.',
       parameters: {
@@ -559,6 +571,56 @@ function executeScoreTimeRange(args: Record<string, unknown>, context: ToolConte
   }
 }
 
+function executeListAtRiskEvents(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
+  const relativeDayKey = resolveRelativeDay(args.relative_day as RelativeDay | undefined, context.now, context.timezone)
+  const limit = typeof args.limit === 'number' ? args.limit : 5
+
+  const analyses = computeProtectedEventAnalyses(context.events, context.windows)
+    .filter((analysis) => {
+      if (!analysis.isWeatherRelevant || analysis.riskLevel === 'low') return false
+      if (relativeDayKey && getDateKey(new Date(analysis.event.startTime), context.timezone) !== relativeDayKey) return false
+      return true
+    })
+    .sort((a, b) => {
+      const weight = { high: 0, medium: 1, low: 2 }
+      return (
+        weight[a.riskLevel] - weight[b.riskLevel] ||
+        new Date(a.event.startTime).getTime() - new Date(b.event.startTime).getTime()
+      )
+    })
+    .slice(0, limit)
+
+  return {
+    response: {
+      count: analyses.length,
+      events: analyses.map((analysis) => ({
+        id: analysis.eventId,
+        title: analysis.event.title,
+        riskLevel: analysis.riskLevel,
+        reasons: analysis.riskReasons,
+        currentScore: analysis.currentScore ?? null,
+        currentTime: `${formatDateTime(new Date(analysis.event.startTime), context.timezone)} - ${formatTime(
+          new Date(analysis.event.endTime),
+          context.timezone
+        )}`,
+        recommendedAlternative: analysis.recommendedAlternative
+          ? {
+              startTime: analysis.recommendedAlternative.startTime,
+              endTime: analysis.recommendedAlternative.endTime,
+              displayTime: `${formatDateTime(new Date(analysis.recommendedAlternative.startTime), context.timezone)} - ${formatTime(
+                new Date(analysis.recommendedAlternative.endTime),
+                context.timezone
+              )}`,
+              score: analysis.recommendedAlternative.score,
+              reason: analysis.recommendedAlternative.reason,
+            }
+          : null,
+      })),
+    },
+    referencedEventIds: analyses.map((analysis) => analysis.eventId),
+  }
+}
+
 function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
   const startTime = new Date(String(args.start_time))
   const endTime = new Date(String(args.end_time))
@@ -736,6 +798,8 @@ function executeTool(name: string, args: Record<string, unknown>, context: ToolC
       return executeFindOptimalSlots(args, context)
     case 'score_time_range':
       return executeScoreTimeRange(args, context)
+    case 'list_at_risk_events':
+      return executeListAtRiskEvents(args, context)
     case 'draft_create_event':
       return executeDraftCreateEvent(args, context)
     case 'draft_update_event':

@@ -1,8 +1,24 @@
-import type { CalendarEvent, SuggestedAlternative, TimeWindow, Activity } from './types'
+import type {
+  Activity,
+  CalendarEvent,
+  ProtectedEventAnalysis,
+  SuggestedAlternative,
+  TimeWindow,
+  WeatherRiskLevel,
+  WeatherRelevanceSource,
+} from './types'
 import { isSameDay } from 'date-fns'
 
 const GOOD_SCORE_THRESHOLD = 70
+const HIGH_RISK_THRESHOLD = 50
 const MIN_IMPROVEMENT = 15
+
+const RUN_KEYWORDS = ['run', 'jog', 'walk', 'bike', 'cycle', 'yoga', 'hike']
+const SOCIAL_KEYWORDS = ['picnic', 'terrace', 'drinks', 'dinner', 'bbq', 'outdoor', 'park', 'beach', 'rooftop']
+const PHOTO_KEYWORDS = ['photo', 'photos', 'photography', 'camera', 'golden hour', 'sunset']
+const INDOOR_KEYWORDS = ['meeting', 'call', 'standup', 'office', 'zoom', 'meet', 'review', 'workshop', 'study', 'deep work']
+
+type ScorableActivity = keyof TimeWindow['scores']
 
 function getOverlappingWindows(
   startTime: Date,
@@ -19,45 +35,44 @@ function getOverlappingWindows(
   })
 }
 
-function getAverageScore(windows: TimeWindow[], activity: Activity): number {
+function getAverageScore(windows: TimeWindow[], activity: ScorableActivity): number {
   if (windows.length === 0) return -1
-  const scores = windows.map((w) => w.scores[activity as keyof typeof w.scores] ?? 50)
+  const scores = windows.map((w) => w.scores[activity])
   return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
 }
 
-function getWeatherReason(
-  currentWindows: TimeWindow[],
-  suggestedWindows: TimeWindow[]
-): string {
-  if (currentWindows.length === 0) return 'No weather data available'
+function getAverageWeather(windows: TimeWindow[]) {
+  if (windows.length === 0) return null
+
+  const totals = windows.reduce(
+    (acc, window) => {
+      acc.rain += window.weather.precipitationProbability
+      acc.wind += window.weather.windSpeed
+      acc.temp += window.weather.temperature
+      return acc
+    },
+    { rain: 0, wind: 0, temp: 0 }
+  )
+
+  return {
+    rain: totals.rain / windows.length,
+    wind: totals.wind / windows.length,
+    temp: totals.temp / windows.length,
+  }
+}
+
+function getRiskReasons(currentWindows: TimeWindow[]): string[] {
+  if (currentWindows.length === 0) return ['No weather data available']
+
+  const avg = getAverageWeather(currentWindows)
+  if (!avg) return ['No weather data available']
 
   const reasons: string[] = []
+  if (avg.rain > 40) reasons.push(`${Math.round(avg.rain)}% rain chance`)
+  if (avg.wind > 20) reasons.push(`strong winds (${Math.round(avg.wind)} km/h)`)
+  if (avg.temp > 35) reasons.push(`high heat (${Math.round(avg.temp)}°C)`)
+  if (avg.temp < 10) reasons.push(`cold temperatures (${Math.round(avg.temp)}°C)`)
 
-  // Check rain
-  const avgRain =
-    currentWindows.reduce((a, w) => a + w.weather.precipitationProbability, 0) /
-    currentWindows.length
-  if (avgRain > 40) {
-    reasons.push(`${Math.round(avgRain)}% rain chance`)
-  }
-
-  // Check wind
-  const avgWind =
-    currentWindows.reduce((a, w) => a + w.weather.windSpeed, 0) / currentWindows.length
-  if (avgWind > 20) {
-    reasons.push(`strong winds (${Math.round(avgWind)} km/h)`)
-  }
-
-  // Check temperature
-  const avgTemp =
-    currentWindows.reduce((a, w) => a + w.weather.temperature, 0) / currentWindows.length
-  if (avgTemp > 35) {
-    reasons.push(`high heat (${Math.round(avgTemp)}°C)`)
-  } else if (avgTemp < 10) {
-    reasons.push(`cold (${Math.round(avgTemp)}°C)`)
-  }
-
-  // Check conditions
   const conditions = currentWindows.map((w) => w.weather.condition)
   if (conditions.includes('storm')) {
     reasons.push('storms expected')
@@ -65,45 +80,123 @@ function getWeatherReason(
     reasons.push('rain expected')
   }
 
-  const currentReason =
-    reasons.length > 0
-      ? reasons.join(', ')
-      : 'suboptimal conditions'
+  return reasons.length > 0 ? reasons : ['suboptimal conditions']
+}
 
-  // Describe suggested time weather
+function getWeatherReason(
+  currentWindows: TimeWindow[],
+  suggestedWindows: TimeWindow[]
+): string {
+  const currentReasons = getRiskReasons(currentWindows)
+  const currentReason = currentReasons.join(', ')
+
   if (suggestedWindows.length > 0) {
-    const sugAvgRain =
-      suggestedWindows.reduce((a, w) => a + w.weather.precipitationProbability, 0) /
-      suggestedWindows.length
-    const sugCondition = suggestedWindows[0].weather.condition
+    const suggestedAvg = getAverageWeather(suggestedWindows)
+    const suggestedCondition = suggestedWindows[0].weather.condition
 
-    if (sugAvgRain < 10 && (sugCondition === 'clear' || sugCondition === 'partly-cloudy')) {
-      return `${currentReason} at current time. Clear skies at suggested time.`
+    if (
+      suggestedAvg &&
+      suggestedAvg.rain < 10 &&
+      (suggestedCondition === 'clear' || suggestedCondition === 'partly-cloudy')
+    ) {
+      return `${currentReason} at current time. Clearer skies at the suggested time.`
     }
-    return `${currentReason} at current time. Better conditions at suggested time.`
+    return `${currentReason} at current time. Better conditions at the suggested time.`
   }
 
   return `${currentReason} at current time.`
 }
 
+function inferActivity(text: string): Activity | null {
+  if (RUN_KEYWORDS.some((keyword) => text.includes(keyword))) return 'run'
+  if (PHOTO_KEYWORDS.some((keyword) => text.includes(keyword))) return 'photo'
+  if (SOCIAL_KEYWORDS.some((keyword) => text.includes(keyword))) return 'social'
+  return null
+}
+
+function inferWeatherRelevance(
+  event: CalendarEvent
+): {
+  isWeatherRelevant: boolean
+  relevanceSource?: WeatherRelevanceSource
+  scoredActivity?: ScorableActivity
+} {
+  if (event.category === 'weather-sensitive' && event.activity && event.activity !== 'custom' && event.activity !== 'study') {
+    return {
+      isWeatherRelevant: true,
+      relevanceSource: 'tagged',
+      scoredActivity: event.activity,
+    }
+  }
+
+  const text = [event.title, event.notes, event.location].filter(Boolean).join(' ').toLowerCase()
+  if (INDOOR_KEYWORDS.some((keyword) => text.includes(keyword))) {
+    return { isWeatherRelevant: false }
+  }
+
+  const inferred = inferActivity(text)
+  if (!inferred || inferred === 'study' || inferred === 'custom') {
+    return { isWeatherRelevant: false }
+  }
+
+  return {
+    isWeatherRelevant: true,
+    relevanceSource: 'heuristic',
+    scoredActivity: inferred,
+  }
+}
+
+function getRiskLevel(score: number): WeatherRiskLevel {
+  if (score < HIGH_RISK_THRESHOLD) return 'high'
+  if (score < GOOD_SCORE_THRESHOLD) return 'medium'
+  return 'low'
+}
+
+function getSuggestionFingerprint(event: CalendarEvent, suggestion: SuggestedAlternative | null, currentScore?: number) {
+  if (!suggestion) return `${event.id}:${event.startTime}:${event.endTime}:none`
+  return [
+    event.id,
+    event.startTime,
+    event.endTime,
+    suggestion.startTime,
+    suggestion.endTime,
+    suggestion.score,
+    currentScore ?? 'na',
+  ].join('|')
+}
+
+function getConflictingEvents(
+  startTime: Date,
+  endTime: Date,
+  events: CalendarEvent[],
+  excludeEventId?: string
+) {
+  return events.filter((event) => {
+    if (excludeEventId && event.id === excludeEventId) return false
+    const eventStart = new Date(event.startTime)
+    const eventEnd = new Date(event.endTime)
+    return startTime < eventEnd && endTime > eventStart
+  })
+}
+
 export function computeSuggestion(
   event: CalendarEvent,
-  windows: TimeWindow[]
+  windows: TimeWindow[],
+  events: CalendarEvent[] = []
 ): SuggestedAlternative | null {
-  if (event.category !== 'weather-sensitive' || !event.activity) return null
+  const relevance = inferWeatherRelevance(event)
+  if (!relevance.isWeatherRelevant || !relevance.scoredActivity) return null
 
   const eventStart = new Date(event.startTime)
   const eventEnd = new Date(event.endTime)
   const durationMs = eventEnd.getTime() - eventStart.getTime()
   const durationSlots = Math.ceil(durationMs / (30 * 60 * 1000))
 
-  // Get current score
   const currentWindows = getOverlappingWindows(eventStart, eventEnd, windows)
-  const currentScore = getAverageScore(currentWindows, event.activity)
+  const currentScore = getAverageScore(currentWindows, relevance.scoredActivity)
 
   if (currentScore < 0 || currentScore >= GOOD_SCORE_THRESHOLD) return null
 
-  // Find all same-day windows
   const sameDayWindows = windows
     .filter((w) => {
       const wDate = new Date(w.date)
@@ -117,7 +210,6 @@ export function computeSuggestion(
 
   if (sameDayWindows.length < durationSlots) return null
 
-  // Scan for best contiguous block of the right duration
   let bestScore = currentScore
   let bestStart: Date | null = null
   let bestEnd: Date | null = null
@@ -125,42 +217,88 @@ export function computeSuggestion(
 
   for (let i = 0; i <= sameDayWindows.length - durationSlots; i++) {
     const block = sameDayWindows.slice(i, i + durationSlots)
-    const blockScore = getAverageScore(block, event.activity)
+    const blockScore = getAverageScore(block, relevance.scoredActivity)
+    if (blockScore <= bestScore + MIN_IMPROVEMENT) continue
 
-    if (blockScore > bestScore + MIN_IMPROVEMENT) {
-      // Build actual start/end times from this block
-      const [sh, sm] = block[0].startTime.split(':').map(Number)
-      const [eh, em] = block[block.length - 1].endTime.split(':').map(Number)
-      const blockStart = new Date(eventStart)
-      blockStart.setHours(sh, sm, 0, 0)
-      const blockEnd = new Date(eventStart)
-      blockEnd.setHours(eh, em, 0, 0)
+    const [sh, sm] = block[0].startTime.split(':').map(Number)
+    const [eh, em] = block[block.length - 1].endTime.split(':').map(Number)
+    const blockStart = new Date(eventStart)
+    blockStart.setHours(sh, sm, 0, 0)
+    const blockEnd = new Date(eventStart)
+    blockEnd.setHours(eh, em, 0, 0)
 
-      // Prefer block closer to original time
-      if (
-        bestStart === null ||
-        blockScore > bestScore + 5 ||
-        Math.abs(blockStart.getTime() - eventStart.getTime()) <
-          Math.abs(bestStart.getTime() - eventStart.getTime())
-      ) {
-        bestScore = blockScore
-        bestStart = blockStart
-        bestEnd = blockEnd
-        bestWindows = block
-      }
+    if (getConflictingEvents(blockStart, blockEnd, events, event.id).length > 0) continue
+
+    if (
+      bestStart === null ||
+      blockScore > bestScore + 5 ||
+      Math.abs(blockStart.getTime() - eventStart.getTime()) <
+        Math.abs(bestStart.getTime() - eventStart.getTime())
+    ) {
+      bestScore = blockScore
+      bestStart = blockStart
+      bestEnd = blockEnd
+      bestWindows = block
     }
   }
 
   if (!bestStart || !bestEnd) return null
 
-  const reason = getWeatherReason(currentWindows, bestWindows)
-
   return {
     startTime: bestStart.toISOString(),
     endTime: bestEnd.toISOString(),
     score: bestScore,
-    reason,
+    reason: getWeatherReason(currentWindows, bestWindows),
   }
+}
+
+export function computeProtectedEventAnalyses(
+  events: CalendarEvent[],
+  windows: TimeWindow[],
+  options?: {
+    dismissedFingerprints?: Set<string>
+  }
+): ProtectedEventAnalysis[] {
+  const dismissedFingerprints = options?.dismissedFingerprints ?? new Set<string>()
+
+  return events.map((event) => {
+    const relevance = inferWeatherRelevance(event)
+    if (!relevance.isWeatherRelevant || !relevance.scoredActivity) {
+      return {
+        eventId: event.id,
+        event,
+        riskLevel: 'low',
+        riskReasons: [],
+        isWeatherRelevant: false,
+        currentScore: undefined,
+        recommendedAlternative: null,
+        dismissed: false,
+      }
+    }
+
+    const currentWindows = getOverlappingWindows(new Date(event.startTime), new Date(event.endTime), windows)
+    const currentScore = getAverageScore(currentWindows, relevance.scoredActivity)
+    const recommendedAlternative =
+      currentScore >= 0 && currentScore < GOOD_SCORE_THRESHOLD
+        ? computeSuggestion(event, windows, events)
+        : null
+
+    const fingerprint = getSuggestionFingerprint(event, recommendedAlternative, currentScore >= 0 ? currentScore : undefined)
+    const dismissed = dismissedFingerprints.has(fingerprint)
+
+    return {
+      eventId: event.id,
+      event,
+      riskLevel: currentScore >= 0 ? getRiskLevel(currentScore) : 'low',
+      riskReasons: currentScore >= 0 ? getRiskReasons(currentWindows) : ['No weather data available'],
+      isWeatherRelevant: true,
+      weatherRelevanceSource: relevance.relevanceSource,
+      currentScore: currentScore >= 0 ? currentScore : undefined,
+      recommendedAlternative: dismissed ? null : recommendedAlternative,
+      dismissed,
+      suggestionFingerprint: fingerprint,
+    }
+  })
 }
 
 export function computeAllSuggestions(
@@ -168,9 +306,10 @@ export function computeAllSuggestions(
   windows: TimeWindow[]
 ): Map<string, SuggestedAlternative | null> {
   const result = new Map<string, SuggestedAlternative | null>()
-  for (const event of events) {
-    if (event.category === 'weather-sensitive' && event.activity) {
-      result.set(event.id, computeSuggestion(event, windows))
+  const analyses = computeProtectedEventAnalyses(events, windows)
+  for (const analysis of analyses) {
+    if (analysis.isWeatherRelevant) {
+      result.set(analysis.eventId, analysis.recommendedAlternative ?? null)
     }
   }
   return result

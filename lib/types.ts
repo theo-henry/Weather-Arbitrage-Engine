@@ -68,12 +68,21 @@ export interface ScheduledEvent {
 export type EventCategory = 'weather-sensitive' | 'indoor';
 
 export type EventColor = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'pink';
+export type WeatherRiskLevel = 'low' | 'medium' | 'high';
+export type WeatherRelevanceSource = 'tagged' | 'heuristic';
 
 export interface SuggestedAlternative {
   startTime: string; // ISO
   endTime: string;   // ISO
   score: number;
   reason: string;
+}
+
+export interface WeatherRisk {
+  level: WeatherRiskLevel;
+  reasons: string[];
+  relevanceSource: WeatherRelevanceSource;
+  currentScore?: number;
 }
 
 export interface CalendarEvent {
@@ -88,8 +97,22 @@ export interface CalendarEvent {
   notes?: string;
   location?: string;
   weatherScore?: number;
+  weatherRisk?: WeatherRisk;
   suggestedAlternative?: SuggestedAlternative | null;
   createdVia: 'ui' | 'chat' | 'mock';
+}
+
+export interface ProtectedEventAnalysis {
+  eventId: string;
+  event: CalendarEvent;
+  riskLevel: WeatherRiskLevel;
+  riskReasons: string[];
+  isWeatherRelevant: boolean;
+  weatherRelevanceSource?: WeatherRelevanceSource;
+  currentScore?: number;
+  recommendedAlternative?: SuggestedAlternative | null;
+  dismissed: boolean;
+  suggestionFingerprint?: string;
 }
 
 export type PendingCalendarOperation =

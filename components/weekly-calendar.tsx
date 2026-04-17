@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { WeatherIcon } from '@/components/weather-icon'
 import { CalendarEventBlock, SuggestionGhost, SLOT_HEIGHT, DAY_START_HOUR } from '@/components/calendar-event-block'
 import { useCalendarStore } from '@/hooks/use-calendar-store'
-import type { CalendarEvent, TimeWindow } from '@/lib/types'
+import type { CalendarEvent, ProtectedEventAnalysis, SuggestedAlternative, TimeWindow } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import {
   startOfWeek,
@@ -94,6 +94,9 @@ function computeLanes(events: CalendarEvent[]): Map<string, { lane: number; tota
 
 interface WeeklyCalendarProps {
   windows: TimeWindow[]
+  analyses: Map<string, ProtectedEventAnalysis>
+  onAcceptSuggestion: (eventId: string, suggestion: SuggestedAlternative) => void
+  onDismissSuggestion: (analysis: ProtectedEventAnalysis) => void
   onCreateEvent: (startTime: Date, endTime: Date) => void
   onEditEvent: (event: CalendarEvent) => void
   className?: string
@@ -101,6 +104,9 @@ interface WeeklyCalendarProps {
 
 export function WeeklyCalendar({
   windows,
+  analyses,
+  onAcceptSuggestion,
+  onDismissSuggestion,
   onCreateEvent,
   onEditEvent,
   className,
@@ -493,13 +499,14 @@ export function WeeklyCalendar({
                         event={event}
                         lane={laneInfo.lane}
                         totalLanes={laneInfo.totalLanes}
+                        analysis={analyses.get(event.id)}
                         onEdit={onEditEvent}
-                        onAcceptSuggestion={(id) => dispatch({ type: 'ACCEPT_SUGGESTION', id })}
-                        onDismissSuggestion={(id) => dispatch({ type: 'DISMISS_SUGGESTION', id })}
+                        onAcceptSuggestion={onAcceptSuggestion}
+                        onDismissSuggestion={onDismissSuggestion}
                         onResizeStart={handleResizeStart}
                         onMoveStart={handleMoveStart}
                       />
-                      <SuggestionGhost event={event} />
+                      <SuggestionGhost suggestion={analyses.get(event.id)?.recommendedAlternative} />
                     </div>
                   )
                 })}

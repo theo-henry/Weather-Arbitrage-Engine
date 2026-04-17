@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { CalendarEvent, Activity } from '@/lib/types'
+import type { CalendarEvent, Activity, ProtectedEventAnalysis, SuggestedAlternative } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 
@@ -36,9 +36,10 @@ interface CalendarEventBlockProps {
   event: CalendarEvent
   lane: number
   totalLanes: number
+  analysis?: ProtectedEventAnalysis
   onEdit: (event: CalendarEvent) => void
-  onAcceptSuggestion: (id: string) => void
-  onDismissSuggestion: (id: string) => void
+  onAcceptSuggestion: (eventId: string, suggestion: SuggestedAlternative) => void
+  onDismissSuggestion: (analysis: ProtectedEventAnalysis) => void
   onResizeStart: (e: React.PointerEvent, event: CalendarEvent) => void
   onMoveStart: (e: React.PointerEvent, event: CalendarEvent) => void
 }
@@ -57,6 +58,7 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
   event,
   lane,
   totalLanes,
+  analysis,
   onEdit,
   onAcceptSuggestion,
   onDismissSuggestion,
@@ -66,7 +68,10 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
   const { top, height } = getEventPosition(event)
   const colors = colorMap[event.color] || colorMap.blue
   const isCompact = height < SLOT_HEIGHT * 1.5
-  const hasSuggestion = !!event.suggestedAlternative
+  const suggestion = analysis?.recommendedAlternative ?? null
+  const hasSuggestion = !!suggestion
+  const riskLevel = analysis?.riskLevel
+  const showRiskHighlight = analysis?.isWeatherRelevant && riskLevel && riskLevel !== 'low'
 
   const laneWidth = 100 / totalLanes
   const left = `${lane * laneWidth}%`
@@ -80,6 +85,8 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
         'absolute rounded-md border-l-[3px] cursor-pointer group select-none overflow-hidden',
         colors.bg,
         colors.border,
+        showRiskHighlight && riskLevel === 'high' && 'ring-1 ring-red-500/40 shadow-[0_0_0_1px_rgba(239,68,68,0.2)]',
+        showRiskHighlight && riskLevel === 'medium' && 'ring-1 ring-amber-500/40 shadow-[0_0_0_1px_rgba(245,158,11,0.18)]',
       )}
       style={{ top, height, left, width, zIndex: 10 }}
       onPointerDown={(e) => {
@@ -112,12 +119,12 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
                         className="flex-shrink-0 p-0.5 rounded hover:bg-amber-500/20 transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <CloudAlert className="h-3.5 w-3.5 text-amber-500" />
+                        <CloudAlert className={cn('h-3.5 w-3.5', riskLevel === 'high' ? 'text-red-500' : 'text-amber-500')} />
                       </button>
                     </PopoverTrigger>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs max-w-[200px]">
-                    {event.suggestedAlternative!.reason}
+                    {analysis?.riskReasons?.[0] || suggestion!.reason}
                   </TooltipContent>
                 </Tooltip>
                 <PopoverContent
@@ -127,27 +134,36 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">Better weather available</p>
+                    <p className="text-sm font-medium">Auto-protect recommendation</p>
                     <p className="text-xs text-muted-foreground">
-                      {event.suggestedAlternative!.reason}
+                      {suggestion!.reason}
                     </p>
                     <div className="flex items-center gap-2 text-xs">
                       <Badge variant="secondary" className="bg-red-500/10 text-red-600">
-                        Score: {event.weatherScore ?? '?'}
+                        Score: {analysis?.currentScore ?? event.weatherScore ?? '?'}
                       </Badge>
                       <MoveRight className="h-3 w-3 text-muted-foreground" />
                       <Badge variant="secondary" className="bg-green-500/10 text-green-600">
-                        Score: {event.suggestedAlternative!.score}
+                        Score: {suggestion!.score}
                       </Badge>
                     </div>
+                    {analysis?.riskReasons?.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {analysis.riskReasons.slice(0, 2).map((reason) => (
+                          <Badge key={reason} variant="outline" className="text-[10px]">
+                            {reason}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
                     <p className="text-xs text-muted-foreground">
-                      Move to {format(new Date(event.suggestedAlternative!.startTime), 'h:mm a')} - {format(new Date(event.suggestedAlternative!.endTime), 'h:mm a')}
+                      Move to {format(new Date(suggestion!.startTime), 'h:mm a')} - {format(new Date(suggestion!.endTime), 'h:mm a')}
                     </p>
                     <div className="flex gap-2 pt-1">
                       <Button
                         size="sm"
                         className="flex-1 h-7 text-xs"
-                        onClick={() => onAcceptSuggestion(event.id)}
+                        onClick={() => onAcceptSuggestion(event.id, suggestion!)}
                       >
                         Move
                       </Button>
@@ -155,7 +171,7 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs"
-                        onClick={() => onDismissSuggestion(event.id)}
+                        onClick={() => analysis && onDismissSuggestion(analysis)}
                       >
                         <X className="h-3 w-3" />
                       </Button>
@@ -203,14 +219,14 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
 
 // Ghost block for weather suggestions
 export function SuggestionGhost({
-  event,
+  suggestion,
 }: {
-  event: CalendarEvent
+  suggestion: SuggestedAlternative | null | undefined
 }) {
-  if (!event.suggestedAlternative) return null
+  if (!suggestion) return null
 
-  const ghostStart = new Date(event.suggestedAlternative.startTime)
-  const ghostEnd = new Date(event.suggestedAlternative.endTime)
+  const ghostStart = new Date(suggestion.startTime)
+  const ghostEnd = new Date(suggestion.endTime)
   const startMinutes = (ghostStart.getHours() - DAY_START_HOUR) * 60 + ghostStart.getMinutes()
   const endMinutes = (ghostEnd.getHours() - DAY_START_HOUR) * 60 + ghostEnd.getMinutes()
   const top = (startMinutes / 30) * SLOT_HEIGHT
@@ -229,7 +245,7 @@ export function SuggestionGhost({
           Move here
         </span>
         <Badge variant="secondary" className="text-[9px] h-4 bg-green-500/10 text-green-600 ml-auto">
-          {event.suggestedAlternative.score}
+          {suggestion.score}
         </Badge>
       </div>
     </motion.div>

@@ -1,5 +1,5 @@
 import { startOfWeek, addDays, setHours, setMinutes } from 'date-fns'
-import type { CalendarEvent, EventColor } from './types'
+import type { Activity, CalendarEvent, EventColor, TimeWindow } from './types'
 
 function makeEvent(
   dayOffset: number,
@@ -142,6 +142,73 @@ export function getMockCalendarEvents(): CalendarEvent[] {
     makeEvent(6, 14, 0, 16, 0, 'Study Session', 'indoor', 'violet', {
       notes: 'TypeScript advanced patterns',
       location: 'Home office',
+    }),
+  ]
+}
+
+function createEventFromWindow(
+  window: TimeWindow,
+  title: string,
+  activity: Activity,
+  color: EventColor,
+  durationMinutes: number,
+  location?: string
+): CalendarEvent {
+  const start = new Date(window.date)
+  const [startHour, startMinute] = window.startTime.split(':').map(Number)
+  start.setHours(startHour, startMinute, 0, 0)
+  const end = new Date(start.getTime() + durationMinutes * 60 * 1000)
+
+  return {
+    id: `demo-${activity}-${window.id}`,
+    title,
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+    category: 'weather-sensitive',
+    activity,
+    color,
+    createdVia: 'mock',
+    location: location || window.location,
+    notes: 'Demo seeded risk event',
+  }
+}
+
+export function buildDemoRiskEvents(windows: TimeWindow[]): CalendarEvent[] {
+  if (windows.length === 0) return getMockCalendarEvents()
+
+  const sortedBy = (activity: keyof TimeWindow['scores']) =>
+    [...windows]
+      .filter((window) => {
+        const start = new Date(window.date)
+        const hour = start.getHours()
+        if (activity === 'run') return hour >= 6 && hour <= 10
+        if (activity === 'photo') return hour >= 11 && hour <= 17
+        return hour >= 12 && hour <= 20
+      })
+      .sort((a, b) => a.scores[activity] - b.scores[activity])
+
+  const worstRun = sortedBy('run')[0] || windows[0]
+  const worstSocial = sortedBy('social')[0] || windows[Math.min(1, windows.length - 1)]
+  const worstPhoto = sortedBy('photo')[0] || windows[Math.min(2, windows.length - 1)]
+
+  const usedIds = new Set<string>()
+  const pickUnique = (candidate: TimeWindow) => {
+    if (!usedIds.has(candidate.id)) {
+      usedIds.add(candidate.id)
+      return candidate
+    }
+    const alternative = windows.find((window) => !usedIds.has(window.id)) || candidate
+    usedIds.add(alternative.id)
+    return alternative
+  }
+
+  return [
+    createEventFromWindow(pickUnique(worstRun), 'Morning Run', 'run', 'amber', 60, 'Retiro Park'),
+    createEventFromWindow(pickUnique(worstSocial), 'Park Picnic', 'social', 'green', 120, 'Retiro Park'),
+    createEventFromWindow(pickUnique(worstPhoto), 'Photo Walk', 'photo', 'amber', 90, 'Madrid Río'),
+    makeEvent(1, 9, 30, 10, 0, 'Team Standup', 'indoor', 'blue', {
+      participants: ['Alex', 'Marta'],
+      location: 'Zoom',
     }),
   ]
 }
