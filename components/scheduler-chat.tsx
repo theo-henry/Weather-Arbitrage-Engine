@@ -160,7 +160,7 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
       const message = error instanceof Error ? error.message : 'The assistant request failed.'
       setMessages((prev) => [
         ...prev,
-        createMessage('assistant', `I couldn’t reach the AI assistant right now. ${message}`, {
+        createMessage('assistant', message, {
           isError: true,
         }),
       ])

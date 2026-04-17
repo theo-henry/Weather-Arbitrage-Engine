@@ -23,6 +23,17 @@ interface GeminiResponse {
   }
 }
 
+class GeminiApiError extends Error {
+  status: number
+  model: string
+  constructor(message: string, status: number, model: string) {
+    super(message)
+    this.name = 'GeminiApiError'
+    this.status = status
+    this.model = model
+  }
+}
+
 function partToGemini(part: LLMPart) {
   switch (part.type) {
     case 'text':
@@ -70,13 +81,57 @@ function geminiPartToNormalized(part: GeminiPart): LLMPart | null {
   return null
 }
 
-async function generate(request: LLMGenerateRequest): Promise<LLMGenerateResponse> {
+function getGeminiModelsToTry() {
+  const primary = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const fallbackRaw = process.env.GEMINI_FALLBACK_MODELS || 'gemini-2.5-flash-lite'
+
+  return [primary, ...fallbackRaw.split(',').map((item) => item.trim()).filter(Boolean)].filter(
+    (model, index, models) => models.indexOf(model) === index
+  )
+}
+
+function shouldTryFallback(error: GeminiApiError) {
+  const lower = error.message.toLowerCase()
+  return (
+    error.status === 429 ||
+    error.status === 503 ||
+    lower.includes('high demand') ||
+    lower.includes('resource exhausted') ||
+    lower.includes('unavailable') ||
+    lower.includes('rate limit')
+  )
+}
+
+function getFriendlyGeminiError(error: Error) {
+  if (error instanceof GeminiApiError) {
+    const lower = error.message.toLowerCase()
+
+    if (error.status === 401 || error.status === 403 || lower.includes('api key')) {
+      return 'The AI assistant is not configured correctly right now. Please check the Gemini API key and project permissions.'
+    }
+
+    if (error.status === 429 || error.status === 503 || lower.includes('high demand') || lower.includes('resource exhausted')) {
+      return 'The AI assistant is temporarily busy right now. Please try again in a moment.'
+    }
+
+    if (lower.includes('safety')) {
+      return 'The AI assistant could not answer that request because of provider safety restrictions.'
+    }
+  }
+
+  if (error.message === 'GEMINI_API_KEY is missing.') {
+    return 'The AI assistant is not configured yet because the Gemini API key is missing.'
+  }
+
+  return 'The AI assistant is unavailable right now. Please try again in a moment.'
+}
+
+async function generateWithModel(model: string, request: LLMGenerateRequest): Promise<LLMGenerateResponse> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is missing.')
   }
 
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -106,7 +161,7 @@ async function generate(request: LLMGenerateRequest): Promise<LLMGenerateRespons
 
   const data = (await response.json()) as GeminiResponse
   if (!response.ok) {
-    throw new Error(data.error?.message || `Gemini API error: ${response.status}`)
+    throw new GeminiApiError(data.error?.message || `Gemini API error: ${response.status}`, response.status, model)
   }
 
   const candidate = data.candidates?.[0]
@@ -130,6 +185,28 @@ async function generate(request: LLMGenerateRequest): Promise<LLMGenerateRespons
     text,
     functionCalls,
   }
+}
+
+async function generate(request: LLMGenerateRequest): Promise<LLMGenerateResponse> {
+  const models = getGeminiModelsToTry()
+  let lastError: Error | null = null
+
+  for (let index = 0; index < models.length; index++) {
+    const model = models[index]
+
+    try {
+      return await generateWithModel(model, request)
+    } catch (error) {
+      const normalized = error instanceof Error ? error : new Error('Gemini request failed.')
+      lastError = normalized
+
+      if (!(normalized instanceof GeminiApiError) || !shouldTryFallback(normalized) || index === models.length - 1) {
+        throw new Error(getFriendlyGeminiError(normalized))
+      }
+    }
+  }
+
+  throw new Error(getFriendlyGeminiError(lastError || new Error('Gemini request failed.')))
 }
 
 export const geminiProvider: LLMProvider = {
