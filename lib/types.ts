@@ -65,6 +65,33 @@ export interface ScheduledEvent {
   score: number;
 }
 
+export type EventCategory = 'weather-sensitive' | 'indoor';
+
+export type EventColor = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'pink';
+
+export interface SuggestedAlternative {
+  startTime: string; // ISO
+  endTime: string;   // ISO
+  score: number;
+  reason: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  startTime: string;          // ISO date string
+  endTime: string;            // ISO date string
+  category: EventCategory;
+  activity?: Activity;        // only for weather-sensitive
+  color: EventColor;
+  participants?: string[];
+  notes?: string;
+  location?: string;
+  weatherScore?: number;
+  suggestedAlternative?: SuggestedAlternative | null;
+  createdVia: 'ui' | 'chat' | 'mock';
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
