@@ -25,6 +25,7 @@ import {
 
 const DAY_END_HOUR = 22
 const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * 2 // 32 slots
+const TIME_GUTTER_WIDTH = 56
 const hours = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => i + DAY_START_HOUR)
 
 function getScoreColor(score: number): string {
@@ -113,6 +114,7 @@ export function WeeklyCalendar({
   const [dragState, setDragState] = useState<{
     type: 'create' | 'resize' | 'move'
     dayIndex?: number
+    anchorSlot?: number
     startSlot?: number
     endSlot?: number
     event?: CalendarEvent
@@ -171,9 +173,8 @@ export function WeeklyCalendar({
   }, [])
 
   const getDayFromX = useCallback((x: number, gridWidth: number) => {
-    const timeGutterWidth = 56
-    const dayWidth = (gridWidth - timeGutterWidth) / 7
-    const dayIdx = Math.floor((x - timeGutterWidth) / dayWidth)
+    const dayWidth = (gridWidth - TIME_GUTTER_WIDTH) / 7
+    const dayIdx = Math.floor((x - TIME_GUTTER_WIDTH) / dayWidth)
     return Math.max(0, Math.min(6, dayIdx))
   }, [])
 
@@ -184,6 +185,13 @@ export function WeeklyCalendar({
     return setMinutes(setHours(days[dayIndex], h), m)
   }, [days])
 
+  const getSelectionRange = useCallback((anchorSlot: number, slot: number) => {
+    const startSlot = Math.min(anchorSlot, slot)
+    const endSlot = Math.max(anchorSlot, slot) + 1
+
+    return { startSlot, endSlot }
+  }, [])
+
   // Drag-to-create handlers
   const handleGridPointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -192,6 +200,8 @@ export function WeeklyCalendar({
       if (!rect) return
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top + (scrollRef.current?.scrollTop || 0)
+      if (x < TIME_GUTTER_WIDTH) return
+
       const dayIdx = getDayFromX(x, rect.width)
       const slot = getSlotFromY(y)
 
@@ -201,11 +211,12 @@ export function WeeklyCalendar({
       setDragState({
         type: 'create',
         dayIndex: dayIdx,
+        anchorSlot: slot,
         startSlot: slot,
         endSlot: slot + 1,
         active: true,
       })
-      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+      gridRef.current?.setPointerCapture?.(e.pointerId)
     },
     [getDayFromX, getSlotFromY]
   )
@@ -219,8 +230,9 @@ export function WeeklyCalendar({
 
       if (dragState.type === 'create') {
         const slot = getSlotFromY(y)
+        const { startSlot, endSlot } = getSelectionRange(dragState.anchorSlot!, slot)
         setDragState((prev) =>
-          prev ? { ...prev, endSlot: Math.max(prev.startSlot! + 1, slot + 1) } : null
+          prev ? { ...prev, startSlot, endSlot } : null
         )
       } else if (dragState.type === 'resize' && dragState.event) {
         const slot = getSlotFromY(y)
@@ -240,7 +252,7 @@ export function WeeklyCalendar({
         )
       }
     },
-    [dragState, getSlotFromY, getDayFromX]
+    [dragState, getSelectionRange, getSlotFromY, getDayFromX]
   )
 
   const handleGridPointerUp = useCallback(() => {
@@ -286,12 +298,13 @@ export function WeeklyCalendar({
       setDragState({
         type: 'resize',
         dayIndex: dayIdx,
+        anchorSlot: endSlot,
         startSlot: endSlot,
         endSlot,
         event,
         active: true,
       })
-      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+      gridRef.current?.setPointerCapture?.(e.pointerId)
     },
     [days]
   )
@@ -308,6 +321,7 @@ export function WeeklyCalendar({
       setDragState({
         type: 'move',
         dayIndex: dayIdx,
+        anchorSlot: startSlot,
         startSlot,
         endSlot: startSlot,
         event,
@@ -510,8 +524,8 @@ export function WeeklyCalendar({
             <div
               className="absolute bg-blue-500/20 border-2 border-blue-500/40 rounded-md z-30 pointer-events-none"
               style={{
-                left: `calc(56px + ${dragState.dayIndex} * ((100% - 56px) / 7))`,
-                width: `calc((100% - 56px) / 7 - 4px)`,
+                left: `calc(${TIME_GUTTER_WIDTH}px + ${dragState.dayIndex} * ((100% - ${TIME_GUTTER_WIDTH}px) / 7))`,
+                width: `calc((100% - ${TIME_GUTTER_WIDTH}px) / 7 - 4px)`,
                 top: dragState.startSlot! * SLOT_HEIGHT,
                 height: (dragState.endSlot! - dragState.startSlot!) * SLOT_HEIGHT,
               }}

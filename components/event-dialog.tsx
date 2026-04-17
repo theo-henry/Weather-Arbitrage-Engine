@@ -35,20 +35,44 @@ const EVENT_COLORS: { value: EventColor; label: string; class: string }[] = [
   { value: 'pink', label: 'Pink', class: 'bg-pink-500' },
 ]
 
-// Generate time options at 15-min increments
-const TIME_OPTIONS = Array.from({ length: 64 }, (_, i) => {
-  const totalMinutes = 6 * 60 + i * 15 // start at 6:00
+// Generate time options at 30-min increments across the full day.
+const BASE_TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+  const totalMinutes = i * 30
   const h = Math.floor(totalMinutes / 60)
   const m = totalMinutes % 60
   const value = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
-  const d = new Date()
-  d.setHours(h, m, 0, 0)
-  const label = format(d, 'h:mm a')
-  return { value, label }
-}).filter((t) => {
-  const h = parseInt(t.value.split(':')[0])
-  return h >= 6 && h < 22
+  return { value, label: formatTimeLabel(value) }
 })
+
+function timeToMinutes(value: string) {
+  const [hours, minutes] = value.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function formatTimeLabel(value: string) {
+  const [hours, minutes] = value.split(':').map(Number)
+  const date = new Date()
+  date.setHours(hours, minutes, 0, 0)
+  return format(date, 'h:mm a')
+}
+
+function buildTimeOptions(extraValues: string[] = []) {
+  const seen = new Set<string>()
+
+  return [...BASE_TIME_OPTIONS, ...extraValues.filter(Boolean).map((value) => ({ value, label: formatTimeLabel(value) }))]
+    .filter((option) => {
+      if (seen.has(option.value)) return false
+      seen.add(option.value)
+      return true
+    })
+    .sort((a, b) => timeToMinutes(a.value) - timeToMinutes(b.value))
+}
+
+function getNextTimeValue(value: string) {
+  const currentMinutes = timeToMinutes(value)
+  const next = BASE_TIME_OPTIONS.find((option) => timeToMinutes(option.value) > currentMinutes)
+  return next?.value ?? value
+}
 
 interface EventDialogProps {
   open: boolean
@@ -81,6 +105,22 @@ export function EventDialog({
   const [notes, setNotes] = useState('')
   const [color, setColor] = useState<EventColor>('blue')
 
+  const startTimeOptions = useMemo(
+    () =>
+      buildTimeOptions([startTime]).filter(
+        (option) => timeToMinutes(option.value) < 23 * 60 + 30 || option.value === startTime
+      ),
+    [startTime]
+  )
+
+  const endTimeOptions = useMemo(
+    () =>
+      buildTimeOptions([startTime, endTime]).filter(
+        (option) => timeToMinutes(option.value) > timeToMinutes(startTime)
+      ),
+    [startTime, endTime]
+  )
+
   // Populate form when event changes
   useEffect(() => {
     if (!event) return
@@ -101,6 +141,15 @@ export function EventDialog({
     setNotes(event.notes || '')
     setColor(event.color || 'blue')
   }, [event])
+
+  useEffect(() => {
+    if (timeToMinutes(endTime) > timeToMinutes(startTime)) return
+
+    const nextTime = getNextTimeValue(startTime)
+    if (nextTime !== endTime) {
+      setEndTime(nextTime)
+    }
+  }, [startTime, endTime])
 
   // Weather score preview for weather-sensitive events
   const weatherPreview = useMemo(() => {
@@ -203,7 +252,7 @@ export function EventDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TIME_OPTIONS.map((t) => (
+                  {startTimeOptions.map((t) => (
                     <SelectItem key={t.value} value={t.value}>
                       {t.label}
                     </SelectItem>
@@ -218,7 +267,7 @@ export function EventDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TIME_OPTIONS.filter((t) => t.value > startTime).map((t) => (
+                  {endTimeOptions.map((t) => (
                     <SelectItem key={t.value} value={t.value}>
                       {t.label}
                     </SelectItem>
