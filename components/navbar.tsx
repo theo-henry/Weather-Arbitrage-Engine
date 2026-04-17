@@ -70,13 +70,7 @@ export function Navbar() {
           {/* Actions */}
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Link href="/dashboard" className="hidden sm:block">
-              <Button className="relative overflow-hidden group">
-                <span className="relative z-10">Launch App</span>
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-violet-500 to-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </Button>
-            </Link>
-            
+
             {/* Mobile menu button */}
             <Button
               variant="ghost"
@@ -113,9 +107,6 @@ export function Navbar() {
                   {link.label}
                 </Link>
               ))}
-              <Link href="/dashboard" className="mt-2">
-                <Button className="w-full">Launch App</Button>
-              </Link>
             </div>
           </motion.nav>
         )}
