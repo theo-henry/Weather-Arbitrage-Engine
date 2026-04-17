@@ -12,7 +12,8 @@ import { computeAllSuggestions } from '@/lib/weather-suggestions'
 import type { CalendarEvent } from '@/lib/types'
 
 function SchedulerContent() {
-  const { windows } = useWeatherData('Madrid')
+  const city = 'Madrid'
+  const { windows } = useWeatherData(city)
   const { state, dispatch } = useCalendarStore()
 
   // Event dialog state
@@ -86,6 +87,7 @@ function SchedulerContent() {
             className="lg:w-[380px] flex-shrink-0 border-b lg:border-b-0 lg:border-r border-border/50 bg-card/50 h-[40vh] lg:h-full"
           >
             <SchedulerChat
+              city={city}
               windows={windows}
               className="h-full"
             />

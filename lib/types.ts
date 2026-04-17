@@ -92,11 +92,55 @@ export interface CalendarEvent {
   createdVia: 'ui' | 'chat' | 'mock';
 }
 
+export type PendingCalendarOperation =
+  | {
+      type: 'create_event';
+      summary: string;
+      eventDraft: Omit<CalendarEvent, 'id'>;
+    }
+  | {
+      type: 'update_event';
+      summary: string;
+      eventId: string;
+      changes: Partial<CalendarEvent>;
+    }
+  | {
+      type: 'delete_event';
+      summary: string;
+      eventId: string;
+    };
+
+export interface AssistantChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface AssistantRequest {
+  messages: AssistantChatMessage[];
+  events: CalendarEvent[];
+  windows: TimeWindow[];
+  city: City;
+  now: string;
+  timezone: string;
+  pendingOperations?: PendingCalendarOperation[] | null;
+}
+
+export interface AssistantResponse {
+  message: string;
+  pendingOperations: PendingCalendarOperation[] | null;
+  requiresConfirmation: boolean;
+  referencedEventIds?: string[];
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  pendingOperations?: PendingCalendarOperation[] | null;
+  requiresConfirmation?: boolean;
+  referencedEventIds?: string[];
+  isError?: boolean;
 }
 
 export interface Intent {
