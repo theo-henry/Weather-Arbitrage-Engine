@@ -199,7 +199,8 @@ export function WeeklyCalendar({
       const rect = gridRef.current?.getBoundingClientRect()
       if (!rect) return
       const x = e.clientX - rect.left
-      const y = e.clientY - rect.top + (scrollRef.current?.scrollTop || 0)
+      // `rect.top` already reflects the scrolled position of the grid.
+      const y = e.clientY - rect.top
       if (x < TIME_GUTTER_WIDTH) return
 
       const dayIdx = getDayFromX(x, rect.width)
@@ -226,7 +227,7 @@ export function WeeklyCalendar({
       if (!dragState?.active) return
       const rect = gridRef.current?.getBoundingClientRect()
       if (!rect) return
-      const y = e.clientY - rect.top + (scrollRef.current?.scrollTop || 0)
+      const y = e.clientY - rect.top
 
       if (dragState.type === 'create') {
         const slot = getSlotFromY(y)
