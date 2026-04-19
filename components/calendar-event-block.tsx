@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 
 const SLOT_HEIGHT = 48 // px per 30-min slot
-const DAY_START_HOUR = 6
+const DAY_START_HOUR = 0
 
 const activityIcons: Record<Activity, string> = {
   run: '🏃',

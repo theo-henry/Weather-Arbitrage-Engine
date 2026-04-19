@@ -6,6 +6,8 @@ import { motion } from 'framer-motion'
 import { Zap, Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { UserMenu } from '@/components/user-menu'
+import { useUser } from '@/hooks/use-user'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
 
@@ -20,6 +22,7 @@ const navLinks = [
 export function Navbar() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const { user, loading } = useUser()
 
   return (
     <motion.header
@@ -71,6 +74,19 @@ export function Navbar() {
           <div className="flex items-center gap-2">
             <ThemeToggle />
 
+            {!loading && (user ? (
+              <UserMenu />
+            ) : (
+              <div className="hidden sm:flex items-center gap-2">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/login">Log in</Link>
+                </Button>
+                <Button size="sm" asChild>
+                  <Link href="/signup">Sign up</Link>
+                </Button>
+              </div>
+            ))}
+
             {/* Mobile menu button */}
             <Button
               variant="ghost"
@@ -107,6 +123,20 @@ export function Navbar() {
                   {link.label}
                 </Link>
               ))}
+              {!loading && !user && (
+                <div className="mt-2 flex gap-2 border-t border-border/50 pt-3">
+                  <Button variant="outline" size="sm" className="flex-1" asChild>
+                    <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                      Log in
+                    </Link>
+                  </Button>
+                  <Button size="sm" className="flex-1" asChild>
+                    <Link href="/signup" onClick={() => setMobileMenuOpen(false)}>
+                      Sign up
+                    </Link>
+                  </Button>
+                </div>
+              )}
             </div>
           </motion.nav>
         )}

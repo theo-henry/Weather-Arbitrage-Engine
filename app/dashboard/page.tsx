@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
 import { Navbar } from '@/components/navbar'
@@ -16,23 +17,13 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { getTopWindows, getWindowAtTime } from '@/lib/mockData'
 import { scoreWindow } from '@/lib/scoring'
 import { useWeatherData } from '@/hooks/use-weather-data'
-import type { UserPreferences, TimeWindow, Activity } from '@/lib/types'
-
-// Default preferences matching demo state
-const defaultPreferences: UserPreferences = {
-  activity: 'run',
-  city: 'Madrid',
-  usualTime: '17:00',
-  performanceVsComfort: 75,
-  windSensitivity: 'high',
-  rainAvoidance: 'medium',
-  timeBias: 'evening',
-  sunsetBonus: true,
-  goldenHourPriority: true,
-}
+import { usePreferences } from '@/hooks/use-preferences'
+import { useUser } from '@/hooks/use-user'
 
 export default function DashboardPage() {
-  const [preferences, setPreferences] = useState<UserPreferences>(defaultPreferences)
+  const router = useRouter()
+  const { user } = useUser()
+  const [preferences, setPreferences] = usePreferences()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Get windows for the selected city (live API with mock fallback)
@@ -74,9 +65,12 @@ export default function DashboardPage() {
   }, [])
 
   const handleAddToCalendar = useCallback(() => {
-    // Navigate to scheduler with the best window
-    window.location.href = '/scheduler'
-  }, [])
+    if (!user) {
+      router.push('/signup?next=/scheduler')
+      return
+    }
+    router.push('/scheduler')
+  }, [user, router])
 
   const PreferencePanelContent = (
     <PreferencePanel

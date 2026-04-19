@@ -23,8 +23,8 @@ import {
   setMinutes,
 } from 'date-fns'
 
-const DAY_END_HOUR = 22
-const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * 2 // 32 slots
+const DAY_END_HOUR = 24
+const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * 2 // 48 slots
 const TIME_GUTTER_WIDTH = 56
 const hours = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => i + DAY_START_HOUR)
 
@@ -380,7 +380,7 @@ export function WeeklyCalendar({
           <div
             key={i}
             className={cn(
-              'flex-1 text-center py-2 border-l border-border/20',
+              'flex-1 text-center py-2 border-l border-border/30',
               isToday(day) && 'bg-blue-500/5'
             )}
           >
@@ -434,7 +434,7 @@ export function WeeklyCalendar({
               <div
                 key={dayIndex}
                 className={cn(
-                  'flex-1 relative border-l border-border/20',
+                  'flex-1 relative border-l border-border/30',
                   isToday(day) && 'bg-blue-500/[0.02]'
                 )}
               >
@@ -458,7 +458,7 @@ export function WeeklyCalendar({
                     <div key={hour}>
                       {/* Hour line */}
                       <div
-                        className="absolute w-full border-t border-border/20"
+                        className="absolute w-full border-t border-border/30"
                         style={{ top: (hour - DAY_START_HOUR) * 2 * SLOT_HEIGHT }}
                       />
                       {/* Half-hour line */}

@@ -1,16 +1,17 @@
 "use client"
 
 import { useState, useMemo, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronLeft, MessageSquare } from 'lucide-react'
 import { Navbar } from '@/components/navbar'
 import { SchedulerChat } from '@/components/scheduler-chat'
 import { WeeklyCalendar } from '@/components/weekly-calendar'
 import { EventDialog } from '@/components/event-dialog'
 import { CalendarStoreProvider, useCalendarStore } from '@/hooks/use-calendar-store'
 import { useWeatherData } from '@/hooks/use-weather-data'
-import { buildDemoRiskEvents } from '@/lib/mock-events'
 import { computeProtectedEventAnalyses } from '@/lib/weather-suggestions'
 import { AutoProtectPanel } from '@/components/auto-protect-panel'
+import { cn } from '@/lib/utils'
 import type { CalendarEvent, ProtectedEventAnalysis, SuggestedAlternative } from '@/lib/types'
 
 function SchedulerContent() {
@@ -22,6 +23,7 @@ function SchedulerContent() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<Partial<CalendarEvent> | null>(null)
   const [dismissedFingerprints, setDismissedFingerprints] = useState<string[]>([])
+  const [chatOpen, setChatOpen] = useState(true)
 
   const analyses = useMemo(
     () =>
@@ -87,25 +89,32 @@ function SchedulerContent() {
     )
   }, [])
 
-  const handleLoadDemo = useCallback(() => {
-    const demoEvents = buildDemoRiskEvents(windows)
-    dispatch({ type: 'LOAD_EVENTS', events: demoEvents })
-    setDismissedFingerprints([])
-  }, [dispatch, windows])
-
   return (
     <div className="h-screen bg-background overflow-hidden">
       <Navbar />
 
-      <main className="mt-16 h-[calc(100vh-4rem)] overflow-hidden">
+      <main className="relative mt-16 h-[calc(100vh-4rem)] overflow-hidden">
         <div className="flex h-full min-h-0 flex-col overflow-hidden lg:flex-row">
-          {/* Chat Panel */}
+          {/* Chat Panel (stays mounted so chat history persists when toggled) */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="h-2/5 min-h-0 flex-shrink-0 overflow-hidden border-b border-border/50 bg-card/50 lg:h-full lg:w-[380px] lg:border-b-0 lg:border-r"
+            className={cn(
+              'min-h-0 flex-shrink-0 overflow-hidden border-border/50 bg-card/50 transition-[width,height,border] duration-300 ease-in-out',
+              chatOpen
+                ? 'h-2/5 border-b lg:h-full lg:w-[380px] lg:border-b-0 lg:border-r'
+                : 'h-0 border-b-0 lg:h-full lg:w-0 lg:border-r-0',
+            )}
           >
-            <div className="flex h-full min-h-0 flex-col overflow-hidden">
+            <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden lg:w-[380px]">
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                aria-label="Hide chat"
+                className="absolute right-2 top-2 z-10 hidden h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:flex"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
               <AutoProtectPanel
                 analyses={analyses}
                 onMove={(analysis) =>
@@ -113,7 +122,6 @@ function SchedulerContent() {
                   handleAcceptSuggestion(analysis.eventId, analysis.recommendedAlternative)
                 }
                 onDismiss={handleDismissSuggestion}
-                onLoadDemo={handleLoadDemo}
               />
               <SchedulerChat
                 city={city}
@@ -127,7 +135,10 @@ function SchedulerContent() {
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="h-3/5 min-h-0 flex-1 overflow-hidden lg:h-full"
+            className={cn(
+              'min-h-0 flex-1 overflow-hidden transition-[height] duration-300 ease-in-out lg:h-full',
+              chatOpen ? 'h-3/5' : 'h-full',
+            )}
           >
             <WeeklyCalendar
               windows={windows}
@@ -140,6 +151,26 @@ function SchedulerContent() {
             />
           </motion.div>
         </div>
+
+        {/* Reopen chat tab (desktop only, when chat is hidden) */}
+        <AnimatePresence>
+          {!chatOpen && (
+            <motion.button
+              key="reopen-chat"
+              type="button"
+              initial={{ x: -40, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -40, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setChatOpen(true)}
+              aria-label="Show chat"
+              className="absolute left-0 top-1/2 z-20 hidden -translate-y-1/2 items-center gap-2 rounded-r-md border border-l-0 border-border/50 bg-card/90 px-2 py-3 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-card hover:text-foreground lg:flex"
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span className="[writing-mode:vertical-rl] rotate-180">Chat</span>
+            </motion.button>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Event Dialog */}

@@ -1,6 +1,6 @@
 'use client'
 
-import { ShieldAlert, ShieldCheck, CloudRain, Wind, Thermometer, Sparkles } from 'lucide-react'
+import { ShieldAlert, ShieldCheck, CloudRain, Wind, Thermometer } from 'lucide-react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,7 +11,6 @@ interface AutoProtectPanelProps {
   analyses: ProtectedEventAnalysis[]
   onMove: (analysis: ProtectedEventAnalysis) => void
   onDismiss: (analysis: ProtectedEventAnalysis) => void
-  onLoadDemo?: () => void
   className?: string
 }
 
@@ -31,7 +30,6 @@ export function AutoProtectPanel({
   analyses,
   onMove,
   onDismiss,
-  onLoadDemo,
   className,
 }: AutoProtectPanelProps) {
   const actionable = analyses
@@ -60,12 +58,6 @@ export function AutoProtectPanel({
             Proactive weather-risk detection with one-click safer moves.
           </p>
         </div>
-        {process.env.NODE_ENV !== 'production' && onLoadDemo && (
-          <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={onLoadDemo}>
-            <Sparkles className="mr-1 h-3.5 w-3.5" />
-            Load Demo Risks
-          </Button>
-        )}
       </div>
 
       <div className="space-y-2 px-4 pb-4">
