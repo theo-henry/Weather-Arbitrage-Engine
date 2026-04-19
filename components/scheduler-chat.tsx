@@ -312,18 +312,20 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
         </div>
       </ScrollArea>
 
-      <div className="px-4 py-2 flex gap-2 flex-wrap">
-        {suggestedPrompts.map((prompt) => (
-          <Badge
-            key={prompt}
-            variant="outline"
-            className="cursor-pointer hover:bg-muted transition-colors px-3 py-1"
-            onClick={() => handlePromptClick(prompt)}
-          >
-            {prompt}
-          </Badge>
-        ))}
-      </div>
+      {!messages.some((m) => m.role === 'user') && (
+        <div className="px-4 py-2 flex gap-2 flex-wrap">
+          {suggestedPrompts.map((prompt) => (
+            <Badge
+              key={prompt}
+              variant="outline"
+              className="cursor-pointer hover:bg-muted transition-colors px-3 py-1"
+              onClick={() => handlePromptClick(prompt)}
+            >
+              {prompt}
+            </Badge>
+          ))}
+        </div>
+      )}
 
       <div className="p-4 border-t border-border/50">
         {pendingOperations && pendingOperations.length > 0 && (

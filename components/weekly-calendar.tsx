@@ -4,6 +4,8 @@ import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import {
   ChevronLeft,
   ChevronRight,
+  Cloud,
+  CloudOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { WeatherIcon } from '@/components/weather-icon'
@@ -113,8 +115,25 @@ export function WeeklyCalendar({
 }: WeeklyCalendarProps) {
   const { state, dispatch } = useCalendarStore()
   const [weekOffset, setWeekOffset] = useState(0)
+  const [weatherDays, setWeatherDays] = useState<Set<number>>(
+    () => new Set([0, 1, 2, 3, 4, 5, 6]),
+  )
   const scrollRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+
+  const toggleWeatherDay = useCallback((dayIndex: number) => {
+    setWeatherDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(dayIndex)) next.delete(dayIndex)
+      else next.add(dayIndex)
+      return next
+    })
+  }, [])
+
+  const allDaysOn = weatherDays.size === 7
+  const toggleAllWeatherDays = useCallback(() => {
+    setWeatherDays((prev) => (prev.size === 7 ? new Set() : new Set([0, 1, 2, 3, 4, 5, 6])))
+  }, [])
 
   // Drag state
   const [dragState, setDragState] = useState<{
@@ -370,35 +389,62 @@ export function WeeklyCalendar({
             {format(currentWeekStart, 'MMM d')} – {format(endOfWeek(currentWeekStart, { weekStartsOn: 1 }), 'MMM d, yyyy')}
           </span>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          onClick={toggleAllWeatherDays}
+          title={allDaysOn ? 'Hide weather on all days' : 'Show weather on all days'}
+        >
+          {allDaysOn ? <Cloud className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
+          Weather
+        </Button>
       </div>
 
       {/* Day headers */}
       <div className="flex border-b border-border/50 flex-shrink-0">
         {/* Time gutter spacer */}
         <div className="w-14 flex-shrink-0" />
-        {days.map((day, i) => (
-          <div
-            key={i}
-            className={cn(
-              'flex-1 text-center py-2 border-l border-border/30',
-              isToday(day) && 'bg-blue-500/5'
-            )}
-          >
-            <div className="text-[10px] uppercase text-muted-foreground tracking-wider">
-              {format(day, 'EEE')}
-            </div>
+        {days.map((day, i) => {
+          const weatherOn = weatherDays.has(i)
+          return (
             <div
+              key={i}
               className={cn(
-                'text-lg font-semibold leading-tight',
-                isToday(day)
-                  ? 'bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center mx-auto'
-                  : 'text-foreground'
+                'flex-1 text-center py-2 border-l border-border/30',
+                isToday(day) && 'bg-blue-500/5'
               )}
             >
-              {format(day, 'd')}
+              <div className="text-[10px] uppercase text-muted-foreground tracking-wider">
+                {format(day, 'EEE')}
+              </div>
+              <div
+                className={cn(
+                  'text-lg font-semibold leading-tight',
+                  isToday(day)
+                    ? 'bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center mx-auto'
+                    : 'text-foreground'
+                )}
+              >
+                {format(day, 'd')}
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleWeatherDay(i)}
+                aria-label={weatherOn ? `Hide weather overlay for ${format(day, 'EEE')}` : `Show weather overlay for ${format(day, 'EEE')}`}
+                title={weatherOn ? 'Hide weather overlay' : 'Show weather overlay'}
+                className={cn(
+                  'mx-auto mt-1 flex h-5 w-5 items-center justify-center rounded-md transition-colors',
+                  weatherOn
+                    ? 'text-blue-500 hover:bg-blue-500/10'
+                    : 'text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground'
+                )}
+              >
+                {weatherOn ? <Cloud className="h-3 w-3" /> : <CloudOff className="h-3 w-3" />}
+              </button>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Scrollable grid */}
@@ -429,6 +475,7 @@ export function WeeklyCalendar({
             const dayEvents = eventsByDay.get(dayIndex) || []
             const dayWindows = windowsByDay.get(dayIndex) || []
             const lanes = computeLanes(dayEvents)
+            const showWeather = weatherDays.has(dayIndex)
 
             return (
               <div
@@ -467,7 +514,7 @@ export function WeeklyCalendar({
                         style={{ top: (hour - DAY_START_HOUR) * 2 * SLOT_HEIGHT + SLOT_HEIGHT }}
                       />
                       {/* Weather heatmap background */}
-                      {avgScore !== null && (
+                      {showWeather && avgScore !== null && (
                         <div
                           className={cn('absolute w-full', getScoreColor(avgScore))}
                           style={{
@@ -477,7 +524,7 @@ export function WeeklyCalendar({
                         />
                       )}
                       {/* Weather icon every 3 hours */}
-                      {window && hour % 3 === 0 && (
+                      {showWeather && window && hour % 3 === 0 && (
                         <div
                           className="absolute right-1 flex items-center gap-0.5 pointer-events-none z-[1]"
                           style={{ top: (hour - DAY_START_HOUR) * 2 * SLOT_HEIGHT + 2 }}

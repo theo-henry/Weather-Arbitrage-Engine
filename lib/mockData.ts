@@ -98,13 +98,13 @@ function generateWeather(hour: number, dayOffset: number, city: City): WeatherCo
   };
 }
 
-// Generate 48 hours of windows (96 × 30-min slots)
+// Generate 10 days of windows (480 × 30-min slots) so the week view fallback stays populated
 export function getWindows(city: City): TimeWindow[] {
   const windows: TimeWindow[] = [];
   const now = new Date();
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const locations = CITY_LOCATIONS_MAP[city];
-  
+
   // Default preferences for scoring
   const defaultPrefs = {
     activity: 'run' as const,
@@ -117,8 +117,8 @@ export function getWindows(city: City): TimeWindow[] {
     sunsetBonus: true,
     goldenHourPriority: true,
   };
-  
-  for (let dayOffset = 0; dayOffset < 2; dayOffset++) {
+
+  for (let dayOffset = 0; dayOffset < 10; dayOffset++) {
     for (let slot = 0; slot < 48; slot++) {
       const date = new Date(now);
       date.setDate(date.getDate() + dayOffset);
