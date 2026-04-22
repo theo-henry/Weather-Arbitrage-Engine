@@ -18,23 +18,47 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [demoLoading, setDemoLoading] = useState(false)
+
+  async function handleLogin(loginEmail: string, loginPassword: string) {
+    const supabase = createClient()
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword })
+
+    if (error) {
+      setError(error.message)
+      return false
+    }
+
+    router.push(next)
+    router.refresh()
+    return true
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
+    await handleLogin(email, password)
+    setLoading(false)
+  }
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+  async function handleDemoLogin() {
+    setError(null)
+    setDemoLoading(true)
+    setEmail('demo@weatherarbitrage.com')
+    setPassword('demo2026')
 
-    if (error) {
-      setError(error.message)
-      setLoading(false)
+    // Ensure demo account exists (creates it if needed)
+    const res = await fetch('/api/demo-login', { method: 'POST' })
+    if (!res.ok) {
+      const data = await res.json()
+      setError(data.error || 'Failed to set up demo account')
+      setDemoLoading(false)
       return
     }
 
-    router.push(next)
-    router.refresh()
+    await handleLogin('demo@weatherarbitrage.com', 'demo2026')
+    setDemoLoading(false)
   }
 
   return (
@@ -88,10 +112,29 @@ function LoginForm() {
               </p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || demoLoading}>
               {loading ? 'Logging in…' : 'Log in'}
             </Button>
           </form>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border/50" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-card px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={loading || demoLoading}
+            onClick={handleDemoLogin}
+          >
+            {demoLoading ? 'Logging in…' : 'Log in with Demo Account'}
+          </Button>
 
           <p className="mt-6 text-sm text-muted-foreground text-center">
             New here?{' '}

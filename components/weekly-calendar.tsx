@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { WeatherIcon } from '@/components/weather-icon'
+import { WeatherSlotTooltip } from '@/components/weather-slot-tooltip'
 import { CalendarEventBlock, SuggestionGhost, SLOT_HEIGHT, DAY_START_HOUR } from '@/components/calendar-event-block'
 import { useCalendarStore } from '@/hooks/use-calendar-store'
 import type { CalendarEvent, ProtectedEventAnalysis, SuggestedAlternative, TimeWindow } from '@/lib/types'
@@ -121,6 +122,38 @@ export function WeeklyCalendar({
   const scrollRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
+  const currentWeekStart = useMemo(
+    () => startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 }),
+    [weekOffset]
+  )
+
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i)),
+    [currentWeekStart]
+  )
+
+  // Turn off weather toggle for days before today when the week changes
+  useEffect(() => {
+    const today = new Date()
+    const enabledDays = new Set<number>()
+    days.forEach((day, i) => {
+      if (isSameDay(day, today) || day > today) {
+        enabledDays.add(i)
+      }
+    })
+    setWeatherDays(enabledDays)
+  }, [currentWeekStart]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Which day indices are today or future (for toggle-all logic)
+  const futureDayIndices = useMemo(() => {
+    const today = new Date()
+    const indices = new Set<number>()
+    days.forEach((day, i) => {
+      if (isSameDay(day, today) || day > today) indices.add(i)
+    })
+    return indices
+  }, [days])
+
   const toggleWeatherDay = useCallback((dayIndex: number) => {
     setWeatherDays((prev) => {
       const next = new Set(prev)
@@ -130,10 +163,21 @@ export function WeeklyCalendar({
     })
   }, [])
 
-  const allDaysOn = weatherDays.size === 7
+  const allDaysOn = futureDayIndices.size > 0 && [...futureDayIndices].every((i) => weatherDays.has(i))
   const toggleAllWeatherDays = useCallback(() => {
-    setWeatherDays((prev) => (prev.size === 7 ? new Set() : new Set([0, 1, 2, 3, 4, 5, 6])))
-  }, [])
+    setWeatherDays((prev) => {
+      const allOn = [...futureDayIndices].every((i) => prev.has(i))
+      return allOn ? new Set() : new Set(futureDayIndices)
+    })
+  }, [futureDayIndices])
+
+  // Hover tooltip state
+  const [hoverInfo, setHoverInfo] = useState<{
+    dayIndex: number
+    slot: number
+    mouseX: number
+    mouseY: number
+  } | null>(null)
 
   // Drag state
   const [dragState, setDragState] = useState<{
@@ -145,16 +189,6 @@ export function WeeklyCalendar({
     event?: CalendarEvent
     active: boolean
   } | null>(null)
-
-  const currentWeekStart = useMemo(
-    () => startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 }),
-    [weekOffset]
-  )
-
-  const days = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i)),
-    [currentWeekStart]
-  )
 
   // Group events by day
   const eventsByDay = useMemo(() => {
@@ -312,6 +346,44 @@ export function WeeklyCalendar({
     setDragState(null)
   }, [dragState, slotToTime, onCreateEvent, dispatch])
 
+  // Hover tracking for weather tooltip
+  const handleGridMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (dragState?.active) {
+        setHoverInfo(null)
+        return
+      }
+      const rect = gridRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      if (x < TIME_GUTTER_WIDTH) {
+        setHoverInfo(null)
+        return
+      }
+      const dayIdx = getDayFromX(x, rect.width)
+      const slot = getSlotFromY(y)
+      setHoverInfo({ dayIndex: dayIdx, slot, mouseX: e.clientX, mouseY: e.clientY })
+    },
+    [dragState, getDayFromX, getSlotFromY]
+  )
+
+  const handleGridMouseLeave = useCallback(() => {
+    setHoverInfo(null)
+  }, [])
+
+  // Find the weather window for the hovered slot
+  const hoveredWindow = useMemo(() => {
+    if (!hoverInfo) return null
+    const dayWindows = windowsByDay.get(hoverInfo.dayIndex)
+    if (!dayWindows) return null
+    const slotMinutes = DAY_START_HOUR * 60 + hoverInfo.slot * 30
+    const slotHour = Math.floor(slotMinutes / 60)
+    const slotMin = slotMinutes % 60
+    const slotTime = `${String(slotHour).padStart(2, '0')}:${String(slotMin).padStart(2, '0')}`
+    return dayWindows.find((w) => w.startTime === slotTime) ?? null
+  }, [hoverInfo, windowsByDay])
+
   const handleResizeStart = useCallback(
     (e: React.PointerEvent, event: CalendarEvent) => {
       e.stopPropagation()
@@ -407,11 +479,12 @@ export function WeeklyCalendar({
         <div className="w-14 flex-shrink-0" />
         {days.map((day, i) => {
           const weatherOn = weatherDays.has(i)
+          const isPast = !futureDayIndices.has(i)
           return (
             <div
               key={i}
               className={cn(
-                'flex-1 text-center py-2 border-l border-border/30',
+                'flex-1 text-center py-2 border-l border-border/50',
                 isToday(day) && 'bg-blue-500/5'
               )}
             >
@@ -430,12 +503,15 @@ export function WeeklyCalendar({
               </div>
               <button
                 type="button"
-                onClick={() => toggleWeatherDay(i)}
+                onClick={() => !isPast && toggleWeatherDay(i)}
+                disabled={isPast}
                 aria-label={weatherOn ? `Hide weather overlay for ${format(day, 'EEE')}` : `Show weather overlay for ${format(day, 'EEE')}`}
-                title={weatherOn ? 'Hide weather overlay' : 'Show weather overlay'}
+                title={isPast ? 'No weather data for past days' : weatherOn ? 'Hide weather overlay' : 'Show weather overlay'}
                 className={cn(
                   'mx-auto mt-1 flex h-5 w-5 items-center justify-center rounded-md transition-colors',
-                  weatherOn
+                  isPast
+                    ? 'text-muted-foreground/30 cursor-not-allowed'
+                    : weatherOn
                     ? 'text-blue-500 hover:bg-blue-500/10'
                     : 'text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground'
                 )}
@@ -456,10 +532,12 @@ export function WeeklyCalendar({
           onPointerDown={handleGridPointerDown}
           onPointerMove={handleGridPointerMove}
           onPointerUp={handleGridPointerUp}
+          onMouseMove={handleGridMouseMove}
+          onMouseLeave={handleGridMouseLeave}
         >
           {/* Time gutter */}
           <div className="w-14 flex-shrink-0 relative">
-            {hours.map((hour) => (
+            {hours.filter((hour) => hour !== DAY_START_HOUR).map((hour) => (
               <div
                 key={hour}
                 className="absolute w-full text-right pr-2 text-[10px] text-muted-foreground -translate-y-1/2"
@@ -481,7 +559,7 @@ export function WeeklyCalendar({
               <div
                 key={dayIndex}
                 className={cn(
-                  'flex-1 relative border-l border-border/30',
+                  'flex-1 relative border-l border-border/50',
                   isToday(day) && 'bg-blue-500/[0.02]'
                 )}
               >
@@ -505,12 +583,12 @@ export function WeeklyCalendar({
                     <div key={hour}>
                       {/* Hour line */}
                       <div
-                        className="absolute w-full border-t border-border/30"
+                        className="absolute w-full border-t border-border/60"
                         style={{ top: (hour - DAY_START_HOUR) * 2 * SLOT_HEIGHT }}
                       />
                       {/* Half-hour line */}
                       <div
-                        className="absolute w-full border-t border-border/10 border-dashed"
+                        className="absolute w-full border-t border-border/30 border-dashed"
                         style={{ top: (hour - DAY_START_HOUR) * 2 * SLOT_HEIGHT + SLOT_HEIGHT }}
                       />
                       {/* Weather heatmap background */}
@@ -573,6 +651,16 @@ export function WeeklyCalendar({
               </div>
             )
           })}
+
+          {/* Weather hover tooltip */}
+          {hoverInfo && hoveredWindow && !dragState?.active && weatherDays.has(hoverInfo.dayIndex) && (
+            <WeatherSlotTooltip
+              weather={hoveredWindow.weather}
+              time={format(slotToTime(hoverInfo.slot, hoverInfo.dayIndex), 'h:mm a')}
+              x={hoverInfo.mouseX}
+              y={hoverInfo.mouseY}
+            />
+          )}
 
           {/* Drag-to-create overlay */}
           {dragState?.active && dragState.type === 'create' && dragState.dayIndex !== undefined && (
