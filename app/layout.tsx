@@ -22,20 +22,8 @@ export const metadata: Metadata = {
   keywords: ['weather', 'optimization', 'scheduling', 'productivity', 'outdoor activities'],
   authors: [{ name: 'Weather Arbitrage Engine' }],
   icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
+    icon: [{ url: '/cloud-icon.svg', type: 'image/svg+xml' }],
+    shortcut: '/cloud-icon.svg',
     apple: '/apple-icon.png',
   },
 }
