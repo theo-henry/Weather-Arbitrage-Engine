@@ -1,12 +1,24 @@
 import { addDays } from 'date-fns'
+import {
+  formatBlockedTimeRule,
+  getActivityProfile,
+  getBlockedTimeMatches,
+  isTimeRangeBlocked,
+  normalizeUserPreferences,
+  removeBlockedTimeRule,
+  upsertBlockedTimeRule,
+} from '@/lib/preferences'
 import type {
   Activity,
+  BlockedTimeRule,
   CalendarEvent,
   City,
   EventCategory,
   EventColor,
   PendingCalendarOperation,
   TimeWindow,
+  UserPreferences,
+  WeekdayKey,
 } from '@/lib/types'
 import { computeProtectedEventAnalyses } from '@/lib/weather-suggestions'
 import type { LLMToolDefinition } from './provider'
@@ -19,6 +31,7 @@ interface ToolContext {
   city: City
   events: CalendarEvent[]
   windows: TimeWindow[]
+  preferences: UserPreferences
   now: Date
   timezone: string
 }
@@ -245,6 +258,67 @@ function sanitizeParticipants(participants: unknown): string[] | undefined {
   return clean.length > 0 ? clean : undefined
 }
 
+function isActivity(value: unknown): value is Activity {
+  return (
+    typeof value === 'string' &&
+    ['run', 'study', 'social', 'flight', 'photo', 'custom'].includes(value)
+  )
+}
+
+function isWeekday(value: unknown): value is WeekdayKey {
+  return typeof value === 'string' && ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].includes(value)
+}
+
+function isTimeString(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value)
+}
+
+function getSettingsSnapshot(preferences: UserPreferences, activity: Activity = preferences.activity) {
+  const profile = getActivityProfile(preferences, activity)
+  const blockedRules = preferences.blockedTimeRules[activity] ?? []
+
+  return {
+    selectedActivity: preferences.activity,
+    city: preferences.city,
+    usualTime: preferences.usualTime,
+    activity,
+    profile: {
+      ...profile,
+      comfort: profile.comfort ?? null,
+    },
+    blockedRules: blockedRules.map((rule) => ({
+      id: rule.id,
+      day: rule.day,
+      startTime: rule.startTime,
+      endTime: rule.endTime,
+      label: formatBlockedTimeRule(rule),
+    })),
+  }
+}
+
+function buildBlockedPreferenceMessage(
+  preferences: UserPreferences,
+  activity: Activity,
+  startTime: Date,
+  endTime: Date,
+  timezone: string,
+) {
+  const matches = getBlockedTimeMatches(preferences, activity, startTime, endTime, timezone)
+  if (matches.length === 0) return null
+
+  return {
+    status: 'blocked_preference',
+    message: `That ${activity} time falls inside your blocked scheduling windows.`,
+    blockedRules: matches.map((rule) => ({
+      id: rule.id,
+      label: formatBlockedTimeRule(rule),
+      day: rule.day,
+      startTime: rule.startTime,
+      endTime: rule.endTime,
+    })),
+  }
+}
+
 function getToolDeclarations(): LLMToolDefinition[] {
   return [
     {
@@ -289,7 +363,8 @@ function getToolDeclarations(): LLMToolDefinition[] {
     },
     {
       name: 'find_optimal_slots',
-      description: 'Find the best conflict-free weather windows for a requested activity and duration.',
+      description:
+        'Find the best conflict-free weather windows for a requested activity and duration when the user asks for the best time or wants alternatives. Do not use this to silently override an explicitly requested clock time.',
       parameters: {
         type: 'object',
         properties: {
@@ -306,7 +381,8 @@ function getToolDeclarations(): LLMToolDefinition[] {
     },
     {
       name: 'score_time_range',
-      description: 'Score a specific time range for a weather-scored activity.',
+      description:
+        'Score a specific time range for a weather-scored activity. Use this to evaluate an explicitly requested time before drafting a weather-sensitive event at that time.',
       parameters: {
         type: 'object',
         properties: {
@@ -329,8 +405,84 @@ function getToolDeclarations(): LLMToolDefinition[] {
       },
     },
     {
+      name: 'get_account_settings',
+      description: 'Inspect the user account settings that affect scheduling, including weather comfort and blocked scheduling windows.',
+      parameters: {
+        type: 'object',
+        properties: {
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo', 'custom'] },
+        },
+      },
+    },
+    {
+      name: 'update_account_settings',
+      description:
+        'Update saved account settings immediately. Use this when the user asks to change preference values, weather comfort, or blocked scheduling windows.',
+      parameters: {
+        type: 'object',
+        properties: {
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo', 'custom'] },
+          set_selected_activity: { type: 'boolean' },
+          city: { type: 'string', enum: ['Madrid', 'Barcelona', 'Valencia', 'Seville'] },
+          usual_time: { type: 'string', description: 'HH:MM' },
+          profile_updates: {
+            type: 'object',
+            properties: {
+              performance_vs_comfort: { type: 'integer' },
+              wind_sensitivity: { type: 'string', enum: ['low', 'medium', 'high'] },
+              rain_avoidance: { type: 'string', enum: ['low', 'medium', 'high'] },
+              time_bias: { type: 'string', enum: ['morning', 'neutral', 'evening'] },
+              prefer_cool: { type: 'boolean' },
+              daylight_preference: { type: 'integer' },
+              distraction_sensitivity: { type: 'boolean' },
+              warmth_preference: { type: 'integer' },
+              sunset_bonus: { type: 'boolean' },
+              golden_hour_priority: { type: 'boolean' },
+              cloud_preference: { type: 'string', enum: ['clear', 'dramatic'] },
+              turbulence_sensitivity: { type: 'string', enum: ['low', 'medium', 'high'] },
+            },
+          },
+          comfort_updates: {
+            type: 'object',
+            properties: {
+              min_temperature: { type: 'integer' },
+              max_temperature: { type: 'integer' },
+              max_wind_speed: { type: 'integer' },
+              max_precipitation_probability: { type: 'integer' },
+            },
+          },
+          add_blocked_times: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                day: { type: 'string', enum: ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] },
+                start_time: { type: 'string', description: 'HH:MM' },
+                end_time: { type: 'string', description: 'HH:MM' },
+              },
+              required: ['day', 'start_time', 'end_time'],
+            },
+          },
+          remove_blocked_times: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                day: { type: 'string', enum: ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] },
+                start_time: { type: 'string', description: 'HH:MM' },
+                end_time: { type: 'string', description: 'HH:MM' },
+              },
+            },
+          },
+          clear_blocked_times: { type: 'boolean' },
+        },
+      },
+    },
+    {
       name: 'draft_create_event',
-      description: 'Draft a new calendar event proposal. This does not apply the change.',
+      description:
+        'Draft a new calendar event proposal. This does not apply the change. If the user gave an explicit time, preserve that requested time unless there is a conflict or the user asked for a better slot.',
       parameters: {
         type: 'object',
         properties: {
@@ -349,7 +501,8 @@ function getToolDeclarations(): LLMToolDefinition[] {
     },
     {
       name: 'draft_update_event',
-      description: 'Draft an update to an existing calendar event. This does not apply the change.',
+      description:
+        'Draft an update to an existing calendar event. This does not apply the change. If the user gave an explicit new time, preserve it unless there is a conflict or the user asked for a better slot.',
       parameters: {
         type: 'object',
         properties: {
@@ -512,6 +665,7 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
     location: string
     weatherSummary: string
   }> = []
+  let blockedByPreferencesCount = 0
 
   for (const dayWindows of windowsByDay.values()) {
     const sorted = [...dayWindows].sort((a, b) => getWindowStart(a).getTime() - getWindowStart(b).getTime())
@@ -519,6 +673,10 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
       const block = sorted.slice(index, index + requiredSlots)
       const blockStart = getWindowStart(block[0])
       const blockEnd = getWindowEnd(block[block.length - 1])
+      if (isTimeRangeBlocked(context.preferences, args.activity, blockStart, blockEnd, context.timezone)) {
+        blockedByPreferencesCount += 1
+        continue
+      }
       const conflicts = getConflictingEvents(blockStart, blockEnd, context.events, context.timezone)
       if (conflicts.length > 0) continue
 
@@ -542,6 +700,7 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
   return {
     response: {
       count: topCandidates.length,
+      blockedByPreferencesCount,
       slots: topCandidates.map((candidate) => ({
         ...candidate,
         displayTime: `${formatDateTime(new Date(candidate.startTime), context.timezone)} - ${formatTime(new Date(candidate.endTime), context.timezone)}`,
@@ -559,6 +718,7 @@ function executeScoreTimeRange(args: Record<string, unknown>, context: ToolConte
   const endTime = new Date(String(args.end_time))
   const overlapping = getOverlappingWindows(startTime, endTime, context.windows)
   const conflicts = getConflictingEvents(startTime, endTime, context.events, context.timezone)
+  const blocked = buildBlockedPreferenceMessage(context.preferences, args.activity, startTime, endTime, context.timezone)
 
   return {
     response: {
@@ -566,6 +726,8 @@ function executeScoreTimeRange(args: Record<string, unknown>, context: ToolConte
       weatherSummary: summarizeWeather(overlapping),
       conflictCount: conflicts.length,
       conflicts,
+      blockedByPreferences: !!blocked,
+      blockedRules: blocked?.blockedRules ?? [],
     },
     referencedEventIds: conflicts.map((conflict) => conflict.id),
   }
@@ -575,7 +737,10 @@ function executeListAtRiskEvents(args: Record<string, unknown>, context: ToolCon
   const relativeDayKey = resolveRelativeDay(args.relative_day as RelativeDay | undefined, context.now, context.timezone)
   const limit = typeof args.limit === 'number' ? args.limit : 5
 
-  const analyses = computeProtectedEventAnalyses(context.events, context.windows)
+  const analyses = computeProtectedEventAnalyses(context.events, context.windows, {
+    preferences: context.preferences,
+    timezone: context.timezone,
+  })
     .filter((analysis) => {
       if (!analysis.isWeatherRelevant || analysis.riskLevel === 'low') return false
       if (relativeDayKey && getDateKey(new Date(analysis.event.startTime), context.timezone) !== relativeDayKey) return false
@@ -621,11 +786,226 @@ function executeListAtRiskEvents(args: Record<string, unknown>, context: ToolCon
   }
 }
 
+function executeGetAccountSettings(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
+  const activity = isActivity(args.activity) ? args.activity : context.preferences.activity
+  return {
+    response: {
+      settings: getSettingsSnapshot(context.preferences, activity),
+    },
+  }
+}
+
+function executeUpdateAccountSettings(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
+  const nextPreferences = normalizeUserPreferences(context.preferences)
+  const targetActivity = isActivity(args.activity) ? args.activity : nextPreferences.activity
+  const appliedChanges: string[] = []
+
+  if (typeof args.city === 'string' && ['Madrid', 'Barcelona', 'Valencia', 'Seville'].includes(args.city)) {
+    nextPreferences.city = args.city as City
+    context.city = nextPreferences.city
+    appliedChanges.push(`city set to ${nextPreferences.city}`)
+  }
+
+  if (typeof args.usual_time === 'string' && isTimeString(args.usual_time)) {
+    nextPreferences.usualTime = args.usual_time
+    appliedChanges.push(`usual time set to ${nextPreferences.usualTime}`)
+  }
+
+  if (args.set_selected_activity === true) {
+    nextPreferences.activity = targetActivity
+    appliedChanges.push(`selected activity set to ${targetActivity}`)
+  }
+
+  const existingProfile = getActivityProfile(nextPreferences, targetActivity)
+  const nextProfile = {
+    ...existingProfile,
+    comfort: existingProfile.comfort ? { ...existingProfile.comfort } : undefined,
+  }
+
+  if (typeof args.profile_updates === 'object' && args.profile_updates) {
+    const updates = args.profile_updates as Record<string, unknown>
+
+    if (typeof updates.performance_vs_comfort === 'number') {
+      nextProfile.performanceVsComfort = updates.performance_vs_comfort
+      appliedChanges.push(`${targetActivity} performance vs comfort set to ${updates.performance_vs_comfort}%`)
+    }
+    if (updates.wind_sensitivity === 'low' || updates.wind_sensitivity === 'medium' || updates.wind_sensitivity === 'high') {
+      nextProfile.windSensitivity = updates.wind_sensitivity
+      appliedChanges.push(`${targetActivity} wind sensitivity set to ${updates.wind_sensitivity}`)
+    }
+    if (updates.rain_avoidance === 'low' || updates.rain_avoidance === 'medium' || updates.rain_avoidance === 'high') {
+      nextProfile.rainAvoidance = updates.rain_avoidance
+      appliedChanges.push(`${targetActivity} rain avoidance set to ${updates.rain_avoidance}`)
+    }
+    if (updates.time_bias === 'morning' || updates.time_bias === 'neutral' || updates.time_bias === 'evening') {
+      nextProfile.timeBias = updates.time_bias
+      appliedChanges.push(`${targetActivity} time bias set to ${updates.time_bias}`)
+    }
+    if (typeof updates.prefer_cool === 'boolean') {
+      nextProfile.preferCool = updates.prefer_cool
+      appliedChanges.push(`${targetActivity} prefer cool set to ${updates.prefer_cool}`)
+    }
+    if (typeof updates.daylight_preference === 'number') {
+      nextProfile.daylightPreference = updates.daylight_preference
+      appliedChanges.push(`${targetActivity} daylight preference set to ${updates.daylight_preference}%`)
+    }
+    if (typeof updates.distraction_sensitivity === 'boolean') {
+      nextProfile.distractionSensitivity = updates.distraction_sensitivity
+      appliedChanges.push(`${targetActivity} distraction sensitivity set to ${updates.distraction_sensitivity}`)
+    }
+    if (typeof updates.warmth_preference === 'number') {
+      nextProfile.warmthPreference = updates.warmth_preference
+      appliedChanges.push(`${targetActivity} warmth preference set to ${updates.warmth_preference}%`)
+    }
+    if (typeof updates.sunset_bonus === 'boolean') {
+      nextProfile.sunsetBonus = updates.sunset_bonus
+      appliedChanges.push(`${targetActivity} sunset bonus set to ${updates.sunset_bonus}`)
+    }
+    if (typeof updates.golden_hour_priority === 'boolean') {
+      nextProfile.goldenHourPriority = updates.golden_hour_priority
+      appliedChanges.push(`${targetActivity} golden hour priority set to ${updates.golden_hour_priority}`)
+    }
+    if (updates.cloud_preference === 'clear' || updates.cloud_preference === 'dramatic') {
+      nextProfile.cloudPreference = updates.cloud_preference
+      appliedChanges.push(`${targetActivity} cloud preference set to ${updates.cloud_preference}`)
+    }
+    if (
+      updates.turbulence_sensitivity === 'low' ||
+      updates.turbulence_sensitivity === 'medium' ||
+      updates.turbulence_sensitivity === 'high'
+    ) {
+      nextProfile.turbulenceSensitivity = updates.turbulence_sensitivity
+      appliedChanges.push(`${targetActivity} turbulence sensitivity set to ${updates.turbulence_sensitivity}`)
+    }
+  }
+
+  if (typeof args.comfort_updates === 'object' && args.comfort_updates) {
+    const updates = args.comfort_updates as Record<string, unknown>
+    const currentComfort = nextProfile.comfort ? { ...nextProfile.comfort } : undefined
+
+    if (currentComfort) {
+      if (typeof updates.min_temperature === 'number') {
+        currentComfort.minTemperature = updates.min_temperature
+        appliedChanges.push(`${targetActivity} minimum comfort temperature set to ${updates.min_temperature}°C`)
+      }
+      if (typeof updates.max_temperature === 'number') {
+        currentComfort.maxTemperature = updates.max_temperature
+        appliedChanges.push(`${targetActivity} maximum comfort temperature set to ${updates.max_temperature}°C`)
+      }
+      if (typeof updates.max_wind_speed === 'number') {
+        currentComfort.maxWindSpeed = updates.max_wind_speed
+        appliedChanges.push(`${targetActivity} max wind set to ${updates.max_wind_speed} km/h`)
+      }
+      if (typeof updates.max_precipitation_probability === 'number') {
+        currentComfort.maxPrecipitationProbability = updates.max_precipitation_probability
+        appliedChanges.push(`${targetActivity} max rain chance set to ${updates.max_precipitation_probability}%`)
+      }
+
+      nextProfile.comfort = currentComfort
+    }
+  }
+
+  nextPreferences.activityProfiles = {
+    ...nextPreferences.activityProfiles,
+    [targetActivity]: nextProfile,
+  }
+
+  if (args.clear_blocked_times === true) {
+    nextPreferences.blockedTimeRules = {
+      ...nextPreferences.blockedTimeRules,
+      [targetActivity]: [],
+    }
+    appliedChanges.push(`cleared all blocked windows for ${targetActivity}`)
+  }
+
+  if (Array.isArray(args.add_blocked_times)) {
+    let rules = nextPreferences.blockedTimeRules[targetActivity] ?? []
+
+    for (const item of args.add_blocked_times) {
+      if (
+        typeof item === 'object' &&
+        item &&
+        isWeekday((item as Record<string, unknown>).day) &&
+        isTimeString((item as Record<string, unknown>).start_time) &&
+        isTimeString((item as Record<string, unknown>).end_time)
+      ) {
+        const ruleDay = (item as Record<string, unknown>).day as WeekdayKey
+        const startTime = (item as Record<string, unknown>).start_time as string
+        const endTime = (item as Record<string, unknown>).end_time as string
+
+        if (startTime < endTime) {
+          rules = upsertBlockedTimeRule(rules, {
+            day: ruleDay,
+            startTime,
+            endTime,
+          })
+          appliedChanges.push(`added blocked window ${formatBlockedTimeRule({ id: '', day: ruleDay, startTime, endTime })}`)
+        }
+      }
+    }
+
+    nextPreferences.blockedTimeRules = {
+      ...nextPreferences.blockedTimeRules,
+      [targetActivity]: rules,
+    }
+  }
+
+  if (Array.isArray(args.remove_blocked_times)) {
+    let rules = nextPreferences.blockedTimeRules[targetActivity] ?? []
+
+    for (const item of args.remove_blocked_times) {
+      if (typeof item !== 'object' || !item) continue
+      const entry = item as Record<string, unknown>
+
+      rules = removeBlockedTimeRule(rules, {
+        id: typeof entry.id === 'string' ? entry.id : '',
+        day: isWeekday(entry.day) ? entry.day : 'mon',
+        startTime: isTimeString(entry.start_time) ? entry.start_time : '',
+        endTime: isTimeString(entry.end_time) ? entry.end_time : '',
+      })
+    }
+
+    nextPreferences.blockedTimeRules = {
+      ...nextPreferences.blockedTimeRules,
+      [targetActivity]: rules,
+    }
+    appliedChanges.push(`updated blocked windows for ${targetActivity}`)
+  }
+
+  if (appliedChanges.length === 0) {
+    return {
+      response: {
+        status: 'no_changes',
+        message: 'No valid account setting changes were provided.',
+        settings: getSettingsSnapshot(context.preferences, targetActivity),
+      },
+    }
+  }
+
+  context.preferences = normalizeUserPreferences(nextPreferences)
+
+  return {
+    response: {
+      status: 'updated',
+      appliedChanges,
+      settings: getSettingsSnapshot(context.preferences, targetActivity),
+    },
+  }
+}
+
 function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
   const startTime = new Date(String(args.start_time))
   const endTime = new Date(String(args.end_time))
   if (!(startTime < endTime)) {
     return { response: { status: 'invalid_time_range', message: 'The event end time must be after the start time.' } }
+  }
+
+  const activity = typeof args.activity === 'string' ? (args.activity as Activity) : undefined
+  if (activity) {
+    const blocked = buildBlockedPreferenceMessage(context.preferences, activity, startTime, endTime, context.timezone)
+    if (blocked) {
+      return { response: blocked }
+    }
   }
 
   const conflicts = getConflictingEvents(startTime, endTime, context.events, context.timezone)
@@ -640,7 +1020,6 @@ function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolCon
     }
   }
 
-  const activity = typeof args.activity === 'string' ? (args.activity as Activity) : undefined
   const category = coerceCategory(activity, args.category as EventCategory | undefined)
   const color = coerceColor(activity, args.color as EventColor | undefined)
   const participants = sanitizeParticipants(args.participants)
@@ -713,6 +1092,22 @@ function executeDraftUpdateEvent(args: Record<string, unknown>, context: ToolCon
 
   if (!(new Date(nextEvent.startTime) < new Date(nextEvent.endTime))) {
     return { response: { status: 'invalid_time_range', message: 'The event end time must be after the start time.' } }
+  }
+
+  if (nextEvent.activity) {
+    const blocked = buildBlockedPreferenceMessage(
+      context.preferences,
+      nextEvent.activity,
+      new Date(nextEvent.startTime),
+      new Date(nextEvent.endTime),
+      context.timezone,
+    )
+    if (blocked) {
+      return {
+        response: blocked,
+        referencedEventIds: [existingEvent.id],
+      }
+    }
   }
 
   const conflicts = getConflictingEvents(
@@ -800,6 +1195,10 @@ function executeTool(name: string, args: Record<string, unknown>, context: ToolC
       return executeScoreTimeRange(args, context)
     case 'list_at_risk_events':
       return executeListAtRiskEvents(args, context)
+    case 'get_account_settings':
+      return executeGetAccountSettings(args, context)
+    case 'update_account_settings':
+      return executeUpdateAccountSettings(args, context)
     case 'draft_create_event':
       return executeDraftCreateEvent(args, context)
     case 'draft_update_event':
@@ -812,10 +1211,18 @@ function executeTool(name: string, args: Record<string, unknown>, context: ToolC
 }
 
 export function buildAssistantTools(context: ToolContext) {
+  const initialPreferences = JSON.stringify(context.preferences)
+
   return {
     declarations: getToolDeclarations(),
     execute(name: string, args: Record<string, unknown>) {
       return executeTool(name, args, context)
+    },
+    getCurrentPreferences() {
+      return context.preferences
+    },
+    hasPreferenceUpdates() {
+      return JSON.stringify(context.preferences) !== initialPreferences
     },
   }
 }

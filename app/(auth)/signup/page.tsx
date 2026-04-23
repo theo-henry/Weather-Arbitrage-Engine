@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MailCheck, Zap } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { isSupabaseConfigured, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +25,12 @@ function SignupForm() {
     e.preventDefault()
     setError(null)
     setLoading(true)
+
+    if (!isSupabaseConfigured()) {
+      setError(SUPABASE_PUBLIC_ENV_ERROR)
+      setLoading(false)
+      return
+    }
 
     const supabase = createClient()
     const { data, error } = await supabase.auth.signUp({

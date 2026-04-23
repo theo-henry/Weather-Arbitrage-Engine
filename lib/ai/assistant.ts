@@ -1,6 +1,13 @@
 import type { AssistantRequest, AssistantResponse, PendingCalendarOperation } from '@/lib/types'
+import { formatBlockedTimeRule, getActivityProfile } from '@/lib/preferences'
 import { buildAssistantTools } from './tools'
 import { getLLMProvider, type LLMContent } from './provider'
+
+interface LatestUserMessageHints {
+  text: string
+  hasExplicitClockTime: boolean
+  wantsOptimization: boolean
+}
 
 function buildPendingSummary(pendingOperations: PendingCalendarOperation[] | null | undefined) {
   if (!pendingOperations || pendingOperations.length === 0) return 'There is no pending unconfirmed calendar proposal.'
@@ -9,7 +16,75 @@ function buildPendingSummary(pendingOperations: PendingCalendarOperation[] | nul
     .join('\n')}`
 }
 
+function getLatestUserMessageHints(messages: AssistantRequest['messages']): LatestUserMessageHints | null {
+  const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user' && message.content.trim())
+  if (!latestUserMessage) return null
+
+  const text = latestUserMessage.content.trim()
+  const hasExplicitClockTime =
+    /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s?(?:am|pm)\b/i.test(text) ||
+    /\bat\s+\d{1,2}(?::\d{2})?\b/i.test(text) ||
+    /\b\d{1,2}:\d{2}\b/.test(text)
+  const wantsOptimization =
+    /\b(best|optimal|optimize|better|ideal|good time|good slot|safest|weather-aware|weather aware)\b/i.test(
+      text
+    )
+
+  return {
+    text,
+    hasExplicitClockTime,
+    wantsOptimization,
+  }
+}
+
+function buildExactTimeGuidance(hints: LatestUserMessageHints | null) {
+  if (!hints?.hasExplicitClockTime || hints.wantsOptimization) {
+    return 'If the user asks for the best or optimal time, you may propose a different slot based on weather and conflicts.'
+  }
+
+  return [
+    `Latest user message: "${hints.text}"`,
+    'The latest user message includes an explicit clock time. Treat that requested time as a hard user preference.',
+    'Do not silently replace an explicitly requested time with a better-scoring slot.',
+    'For an exact-time weather-sensitive request, score the requested time first with score_time_range.',
+    'If the requested time is conflict-free, draft the event or update at that exact time.',
+    'If weather is weak at that time, explain the risk briefly and optionally offer a better alternative, but keep the requested time as the draft unless the user asks you to move it.',
+    'Only use find_optimal_slots to replace the requested time when the user explicitly asks for the best time or wants alternatives.',
+  ].join('\n')
+}
+
+function buildPreferencesSummary(request: AssistantRequest) {
+  const profile = getActivityProfile(request.preferences, request.preferences.activity)
+  const blockedRules = request.preferences.blockedTimeRules[request.preferences.activity] ?? []
+
+  const lines = [
+    `Selected activity preference: ${request.preferences.activity}.`,
+    `Preferred city: ${request.preferences.city}.`,
+    `Usual time: ${request.preferences.usualTime}.`,
+  ]
+
+  if (profile.comfort) {
+    lines.push(
+      `Comfort envelope for ${request.preferences.activity}: ${profile.comfort.minTemperature}-${profile.comfort.maxTemperature}°C, max wind ${profile.comfort.maxWindSpeed} km/h, max rain chance ${profile.comfort.maxPrecipitationProbability}%.`,
+    )
+  }
+
+  if (blockedRules.length > 0) {
+    lines.push(
+      `Blocked scheduling windows for ${request.preferences.activity}: ${blockedRules
+        .slice(0, 4)
+        .map((rule) => formatBlockedTimeRule(rule))
+        .join('; ')}${blockedRules.length > 4 ? '; ...' : ''}.`,
+    )
+  } else {
+    lines.push(`Blocked scheduling windows for ${request.preferences.activity}: none configured.`)
+  }
+
+  return lines.join('\n')
+}
+
 function buildSystemInstruction(request: AssistantRequest) {
+  const latestUserMessageHints = getLatestUserMessageHints(request.messages)
   return [
     'You are the Weather Arbitrage Engine scheduling assistant.',
     'You help the user inspect their schedule, understand weather conditions, and draft calendar changes.',
@@ -19,7 +94,13 @@ function buildSystemInstruction(request: AssistantRequest) {
     'If the user asks to modify or delete an event, use find_events or list_events first unless the reference is already unambiguous.',
     'If multiple events match, ask a brief clarification question instead of guessing.',
     'Default to conflict-free scheduling. If a tool reports a conflict, explain it and do not draft a conflicting write unless the user explicitly asks to replace something.',
+    'Blocked scheduling windows in account settings are hard constraints for assistant recommendations and draft scheduling actions.',
+    'Weather comfort settings must influence any recommended time blocks.',
+    'If the user asks about settings or wants to change them, use the account settings tools instead of describing imaginary settings.',
+    'Preference changes apply immediately and are not confirmation-gated like calendar drafts.',
     'Keep replies concise, helpful, and in plain text.',
+    buildExactTimeGuidance(latestUserMessageHints),
+    buildPreferencesSummary(request),
     `Current city: ${request.city}.`,
     `Current time: ${request.now}.`,
     `User timezone: ${request.timezone}.`,
@@ -42,6 +123,7 @@ export async function runAssistant(request: AssistantRequest): Promise<Assistant
     city: request.city,
     events: request.events,
     windows: request.windows,
+    preferences: request.preferences,
     now: new Date(request.now),
     timezone: request.timezone,
   })
@@ -63,6 +145,7 @@ export async function runAssistant(request: AssistantRequest): Promise<Assistant
         pendingOperations: pendingOperations.length > 0 ? pendingOperations : null,
         requiresConfirmation: pendingOperations.length > 0,
         referencedEventIds: [...referencedEventIds],
+        updatedPreferences: tools.hasPreferenceUpdates() ? tools.getCurrentPreferences() : null,
       }
     }
 
@@ -93,5 +176,6 @@ export async function runAssistant(request: AssistantRequest): Promise<Assistant
     pendingOperations: pendingOperations.length > 0 ? pendingOperations : null,
     requiresConfirmation: pendingOperations.length > 0,
     referencedEventIds: [...referencedEventIds],
+    updatedPreferences: tools.hasPreferenceUpdates() ? tools.getCurrentPreferences() : null,
   }
 }

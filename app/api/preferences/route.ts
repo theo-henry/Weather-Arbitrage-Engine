@@ -1,20 +1,14 @@
 import { NextResponse } from 'next/server'
+import { getDefaultUserPreferences, normalizeUserPreferences } from '@/lib/preferences'
 import { createClient } from '@/lib/supabase/server'
+import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import type { UserPreferences } from '@/lib/types'
 
-const DEFAULT_PREFERENCES: UserPreferences = {
-  activity: 'run',
-  city: 'Madrid',
-  usualTime: '17:00',
-  performanceVsComfort: 75,
-  windSensitivity: 'high',
-  rainAvoidance: 'medium',
-  timeBias: 'evening',
-  sunsetBonus: true,
-  goldenHourPriority: true,
-}
-
 export async function GET() {
+  if (!getSupabasePublicEnv()) {
+    return NextResponse.json({ error: SUPABASE_PUBLIC_ENV_ERROR }, { status: 503 })
+  }
+
   const supabase = await createClient()
   const {
     data: { user },
@@ -30,11 +24,15 @@ export async function GET() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({
-    preferences: (data?.data as UserPreferences) ?? DEFAULT_PREFERENCES,
+    preferences: data?.data ? normalizeUserPreferences(data.data) : getDefaultUserPreferences(),
   })
 }
 
 export async function PUT(request: Request) {
+  if (!getSupabasePublicEnv()) {
+    return NextResponse.json({ error: SUPABASE_PUBLIC_ENV_ERROR }, { status: 503 })
+  }
+
   const supabase = await createClient()
   const {
     data: { user },
@@ -46,10 +44,12 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'missing preferences' }, { status: 400 })
   }
 
+  const normalizedPreferences = normalizeUserPreferences(body.preferences)
+
   const { error } = await supabase
     .from('user_preferences')
     .upsert(
-      { user_id: user.id, data: body.preferences, updated_at: new Date().toISOString() },
+      { user_id: user.id, data: normalizedPreferences, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' },
     )
 

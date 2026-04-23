@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import { isSupabaseConfigured } from '@/lib/supabase/public-config'
 
 interface UserContextValue {
   user: User | null
@@ -22,6 +23,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setLoading(false)
+      return
+    }
+
     const supabase = createClient()
 
     supabase.auth.getUser().then(({ data }) => {

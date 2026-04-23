@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import type { CalendarEvent } from '@/lib/types'
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!getSupabasePublicEnv()) {
+    return NextResponse.json({ error: SUPABASE_PUBLIC_ENV_ERROR }, { status: 503 })
+  }
+
   const { id } = await params
   const supabase = await createClient()
   const {
@@ -34,6 +39,10 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!getSupabasePublicEnv()) {
+    return NextResponse.json({ error: SUPABASE_PUBLIC_ENV_ERROR }, { status: 503 })
+  }
+
   const { id } = await params
   const supabase = await createClient()
   const {

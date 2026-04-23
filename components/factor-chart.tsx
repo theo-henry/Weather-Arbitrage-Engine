@@ -13,7 +13,6 @@ import {
 import { motion } from 'framer-motion'
 import type { TimeWindow, Activity } from '@/lib/types'
 import { ACTIVITY_CONFIG } from '@/lib/types'
-import { scoreWindow } from '@/lib/scoring'
 import { cn } from '@/lib/utils'
 
 interface FactorChartProps {
@@ -31,30 +30,11 @@ export function FactorChart({
 }: FactorChartProps) {
   const chartData = useMemo(() => {
     const factors = ACTIVITY_CONFIG[activity].factors
-    const bestPrefs = {
-      activity,
-      city: bestWindow.city,
-      usualTime: '17:00',
-    }
-    
-    const bestScoring = scoreWindow(
-      bestWindow.weather,
-      bestPrefs,
-      parseInt(bestWindow.startTime.split(':')[0])
-    )
-    
-    const usualScoring = usualWindow 
-      ? scoreWindow(
-          usualWindow.weather,
-          bestPrefs,
-          parseInt(usualWindow.startTime.split(':')[0])
-        )
-      : null
     
     return factors.map((factor) => ({
       factor: factor.charAt(0).toUpperCase() + factor.slice(1).replace('_', ' '),
-      best: bestScoring.factors[factor] ?? 70,
-      usual: usualScoring?.factors[factor] ?? 50,
+      best: bestWindow.factorBreakdown[factor] ?? 70,
+      usual: usualWindow?.factorBreakdown[factor] ?? 50,
     }))
   }, [bestWindow, usualWindow, activity])
 

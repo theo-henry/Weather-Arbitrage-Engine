@@ -1,5 +1,6 @@
 import type { City, TimeWindow, WeatherConditions, WeatherConditionType, Confidence } from './types';
-import { scoreRun, scoreStudy, scoreSocial, scoreFlight, scorePhoto } from './scoring';
+import { getDefaultUserPreferences, getResolvedActivityPreferences } from './preferences';
+import { scoreRun, scoreStudy, scoreSocial, scoreFlight, scorePhoto, scoreWindow } from './scoring';
 
 const CITY_LOCATIONS_MAP: Record<City, string[]> = {
   Madrid: ['Retiro Park', 'Casa de Campo', 'Madrid Río', 'El Capricho'],
@@ -16,42 +17,86 @@ const CITY_BASE_TEMPS: Record<City, number> = {
   Seville: 28,
 };
 
+function seededUnit(...parts: Array<string | number>): number {
+  const input = parts.join(':');
+  let hash = 2166136261;
+
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0) / 4294967295;
+}
+
 // Generate realistic weather for a given hour
 function generateWeather(hour: number, dayOffset: number, city: City): WeatherConditions {
   const baseTemp = CITY_BASE_TEMPS[city];
-  
+
+  const tempNoise = seededUnit(city, dayOffset, hour, 'temp');
+  const humidityNoise = seededUnit(city, dayOffset, hour, 'humidity');
+  const windNoise = seededUnit(city, dayOffset, hour, 'wind');
+  const rainNoise = seededUnit(city, dayOffset, hour, 'rain');
+  const cloudNoise = seededUnit(city, dayOffset, hour, 'cloud');
+
+  const isRainyBlock =
+    ((dayOffset % 4 === 0) && hour >= 15 && hour <= 18) ||
+    ((dayOffset % 5 === 1) && hour >= 10 && hour <= 12) ||
+    ((dayOffset % 6 === 3) && hour >= 19 && hour <= 21) ||
+    ((dayOffset % 7 === 5) && hour >= 20 && hour <= 22);
+  const isWindyBlock =
+    (((dayOffset + 2) % 5 === 0) && hour >= 16 && hour <= 20) ||
+    ((dayOffset % 7 === 6) && hour >= 12 && hour <= 16);
+  const isHeatBlock =
+    (((dayOffset + 1) % 6 === 0) && hour >= 13 && hour <= 17) ||
+    ((dayOffset % 7 === 6) && hour >= 13 && hour <= 16);
+
   // Temperature varies by time of day (cooler morning/night, warmer afternoon)
   const hourFactor = Math.sin(((hour - 6) / 24) * Math.PI * 2) * 0.5;
-  const temperature = Math.round(baseTemp + hourFactor * 8 + (Math.random() - 0.5) * 3);
-  
+  const temperature = Math.round(
+    baseTemp +
+      hourFactor * 8 +
+      (tempNoise - 0.5) * 3 +
+      (isHeatBlock ? 5 : 0) -
+      (isRainyBlock ? 2 : 0)
+  );
+
   // Humidity is higher in morning and evening
   const humidityBase = hour < 8 || hour > 20 ? 65 : 45;
-  const humidity = Math.round(humidityBase + (Math.random() - 0.5) * 20);
-  
+  const humidity = Math.round(
+    humidityBase +
+      (humidityNoise - 0.5) * 20 +
+      (isRainyBlock ? 18 : 0)
+  );
+
   // Wind varies semi-randomly but typically lower in morning
   const windBase = hour < 10 ? 8 : hour > 18 ? 12 : 15;
-  const windSpeed = Math.round(windBase + (Math.random() - 0.5) * 10);
-  
-  // Rain probability - add some rain blocks
-  const isRainyBlock = (dayOffset === 0 && hour >= 15 && hour <= 17) || 
-                       (dayOffset === 1 && hour >= 10 && hour <= 12);
+  const windSpeed = Math.round(
+    windBase +
+      (windNoise - 0.5) * 10 +
+      (isWindyBlock ? 12 : 0)
+  );
+
+  // Rain probability with recurring unstable blocks for demo scheduling
   const precipitationProbability = isRainyBlock 
-    ? Math.round(40 + Math.random() * 40)
-    : Math.round(Math.random() * 20);
-  
+    ? Math.round(55 + rainNoise * 35)
+    : Math.round(rainNoise * 20);
+
   // UV index (only during day)
   const uvIndex = hour >= 7 && hour <= 19 
     ? Math.round(3 + Math.sin(((hour - 7) / 12) * Math.PI) * 6)
     : 0;
-  
+
   // Cloud cover
   const cloudCover = isRainyBlock 
-    ? Math.round(60 + Math.random() * 30)
-    : Math.round(20 + Math.random() * 40);
-  
+    ? Math.round(65 + cloudNoise * 25)
+    : Math.round(20 + cloudNoise * 40);
+
   // Determine condition
   let condition: WeatherConditionType = 'clear';
-  if (precipitationProbability > 60) {
+  if (precipitationProbability > 75 && windSpeed > 24) {
+    condition = 'storm';
+  } else if (precipitationProbability > 60) {
     condition = 'rain';
   } else if (precipitationProbability > 40) {
     condition = 'drizzle';
@@ -60,7 +105,7 @@ function generateWeather(hour: number, dayOffset: number, city: City): WeatherCo
   } else if (cloudCover > 30) {
     condition = 'partly-cloudy';
   }
-  
+
   // Calculate "feels like" temperature (simplified heat index / wind chill)
   let feelsLike = temperature;
   if (temperature > 27 && humidity > 40) {
@@ -73,17 +118,21 @@ function generateWeather(hour: number, dayOffset: number, city: City): WeatherCo
   
   // Precipitation amount (mm) - only if raining
   const precipitation = condition === 'rain' 
-    ? Math.round((2 + Math.random() * 8) * 10) / 10
+    ? Math.round((2 + seededUnit(city, dayOffset, hour, 'rain-amount') * 8) * 10) / 10
     : condition === 'drizzle'
-    ? Math.round((0.5 + Math.random() * 1.5) * 10) / 10
+    ? Math.round((0.5 + seededUnit(city, dayOffset, hour, 'drizzle-amount') * 1.5) * 10) / 10
     : 0;
-  
+
   // Air quality index (AQI) - lower is better
   // Typically 20-60 is good, higher in cities during peak hours
   const aqiBase = city === 'Madrid' ? 45 : city === 'Barcelona' ? 42 : city === 'Valencia' ? 35 : 38;
   const aqiHourFactor = (hour >= 8 && hour <= 10) || (hour >= 17 && hour <= 19) ? 15 : 0; // Rush hour
-  const airQuality = Math.round(aqiBase + aqiHourFactor + (Math.random() - 0.5) * 20);
-  
+  const airQuality = Math.round(
+    aqiBase +
+      aqiHourFactor +
+      (seededUnit(city, dayOffset, hour, 'aqi') - 0.5) * 20
+  );
+
   return {
     temperature,
     feelsLike,
@@ -98,7 +147,7 @@ function generateWeather(hour: number, dayOffset: number, city: City): WeatherCo
   };
 }
 
-// Generate 10 days of windows (480 × 30-min slots) so the week view fallback stays populated
+// Generate 14 days of windows (672 × 30-min slots) so the demo schedule has full weather coverage in fallback mode
 export function getWindows(city: City): TimeWindow[] {
   const windows: TimeWindow[] = [];
   const now = new Date();
@@ -106,19 +155,9 @@ export function getWindows(city: City): TimeWindow[] {
   const locations = CITY_LOCATIONS_MAP[city];
 
   // Default preferences for scoring
-  const defaultPrefs = {
-    activity: 'run' as const,
-    city,
-    usualTime: '17:00',
-    performanceVsComfort: 75,
-    windSensitivity: 'high' as const,
-    rainAvoidance: 'medium' as const,
-    timeBias: 'evening' as const,
-    sunsetBonus: true,
-    goldenHourPriority: true,
-  };
+  const defaultPreferences = getDefaultUserPreferences(city);
 
-  for (let dayOffset = 0; dayOffset < 10; dayOffset++) {
+  for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
     for (let slot = 0; slot < 48; slot++) {
       const date = new Date(now);
       date.setDate(date.getDate() + dayOffset);
@@ -132,14 +171,17 @@ export function getWindows(city: City): TimeWindow[] {
       const endTime = `${endHour.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
       
       const weather = generateWeather(hour, dayOffset, city);
-      const location = locations[Math.floor(Math.random() * locations.length)];
+      const location = locations[
+        Math.floor(seededUnit(city, dayOffset, slot, 'location') * locations.length)
+      ];
       
       // Calculate scores for all activities
-      const runResult = scoreRun(weather, { ...defaultPrefs, activity: 'run' }, hour);
-      const studyResult = scoreStudy(weather, { ...defaultPrefs, activity: 'study' }, hour);
-      const socialResult = scoreSocial(weather, { ...defaultPrefs, activity: 'social' }, hour, 20);
-      const flightResult = scoreFlight(weather, { ...defaultPrefs, activity: 'flight' }, hour);
-      const photoResult = scorePhoto(weather, { ...defaultPrefs, activity: 'photo' }, hour, 20, 7);
+      const runResult = scoreRun(weather, getResolvedActivityPreferences(defaultPreferences, 'run'), hour);
+      const studyResult = scoreStudy(weather, getResolvedActivityPreferences(defaultPreferences, 'study'), hour);
+      const socialResult = scoreSocial(weather, getResolvedActivityPreferences(defaultPreferences, 'social'), hour, 20);
+      const flightResult = scoreFlight(weather, getResolvedActivityPreferences(defaultPreferences, 'flight'), hour);
+      const photoResult = scorePhoto(weather, getResolvedActivityPreferences(defaultPreferences, 'photo'), hour, 20, 7);
+      const customResult = scoreWindow(weather, getResolvedActivityPreferences(defaultPreferences, 'custom'), hour);
       
       // Determine confidence based on weather stability
       let confidence: Confidence = 'High';
@@ -165,6 +207,7 @@ export function getWindows(city: City): TimeWindow[] {
           social: socialResult.score,
           flight: flightResult.score,
           photo: photoResult.score,
+          custom: customResult.score,
         },
         factorBreakdown: runResult.factors, // Default to run factors
         confidence,

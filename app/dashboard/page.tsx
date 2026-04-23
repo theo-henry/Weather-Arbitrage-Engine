@@ -15,7 +15,7 @@ import { InsightPanel } from '@/components/insight-panel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { getTopWindows, getWindowAtTime } from '@/lib/mockData'
-import { scoreWindow } from '@/lib/scoring'
+import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import { useWeatherData } from '@/hooks/use-weather-data'
 import { usePreferences } from '@/hooks/use-preferences'
 import { useUser } from '@/hooks/use-user'
@@ -30,20 +30,7 @@ export default function DashboardPage() {
   const { windows, loading, isLive } = useWeatherData(preferences.city)
 
   // Recalculate scores based on preferences
-  const scoredWindows = useMemo(() => {
-    return windows.map((w) => {
-      const hour = parseInt(w.startTime.split(':')[0])
-      const result = scoreWindow(w.weather, preferences, hour)
-      return {
-        ...w,
-        scores: {
-          ...w.scores,
-          [preferences.activity]: result.score,
-        },
-        factorBreakdown: result.factors,
-      }
-    })
-  }, [windows, preferences])
+  const scoredWindows = useMemo(() => applyPreferenceScoresToWindows(windows, preferences), [windows, preferences])
 
   // Get top windows sorted by current activity score
   const topWindows = useMemo(() => {

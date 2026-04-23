@@ -4,6 +4,43 @@ export type Confidence = 'High' | 'Medium' | 'Low';
 export type Sensitivity = 'low' | 'medium' | 'high';
 export type TimeBias = 'morning' | 'neutral' | 'evening';
 export type WeatherConditionType = 'clear' | 'partly-cloudy' | 'cloudy' | 'rain' | 'drizzle' | 'storm' | 'snow';
+export type WeekdayKey = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
+
+export interface ActivityWeatherComfort {
+  minTemperature: number;
+  maxTemperature: number;
+  maxWindSpeed: number;
+  maxPrecipitationProbability: number;
+}
+
+export interface ActivityPreferenceProfile {
+  performanceVsComfort?: number; // 0 (comfort) – 100 (performance)
+  windSensitivity?: Sensitivity;
+  rainAvoidance?: Sensitivity;
+  timeBias?: TimeBias;
+  preferCool?: boolean;
+  daylightPreference?: number;
+  distractionSensitivity?: boolean;
+  warmthPreference?: number;
+  sunsetBonus?: boolean;
+  goldenHourPriority?: boolean;
+  cloudPreference?: 'clear' | 'dramatic';
+  turbulenceSensitivity?: Sensitivity;
+  comfort?: ActivityWeatherComfort;
+}
+
+export interface ResolvedActivityPreferences extends ActivityPreferenceProfile {
+  activity: Activity;
+  city: City;
+  usualTime: string;
+}
+
+export interface BlockedTimeRule {
+  id: string;
+  day: WeekdayKey;
+  startTime: string; // '08:00'
+  endTime: string;   // '10:30'
+}
 
 export interface WeatherConditions {
   temperature: number;        // °C
@@ -33,6 +70,7 @@ export interface TimeWindow {
     social: number;
     flight: number;
     photo: number;
+    custom: number;
   };
   factorBreakdown: Record<string, number>; // 0–100 per factor
   confidence: Confidence;
@@ -42,19 +80,8 @@ export interface UserPreferences {
   activity: Activity;
   city: City;
   usualTime: string;         // '17:00'
-  // activity-specific, optional:
-  performanceVsComfort?: number; // 0 (comfort) – 100 (performance)
-  windSensitivity?: Sensitivity;
-  rainAvoidance?: Sensitivity;
-  timeBias?: TimeBias;
-  preferCool?: boolean;
-  daylightPreference?: number;
-  distractionSensitivity?: boolean;
-  warmthPreference?: number;
-  sunsetBonus?: boolean;
-  goldenHourPriority?: boolean;
-  cloudPreference?: 'clear' | 'dramatic';
-  turbulenceSensitivity?: Sensitivity;
+  activityProfiles: Record<Activity, ActivityPreferenceProfile>;
+  blockedTimeRules: Record<Activity, BlockedTimeRule[]>;
 }
 
 export interface ScheduledEvent {
@@ -143,6 +170,7 @@ export interface AssistantRequest {
   events: CalendarEvent[];
   windows: TimeWindow[];
   city: City;
+  preferences: UserPreferences;
   now: string;
   timezone: string;
   pendingOperations?: PendingCalendarOperation[] | null;
@@ -153,6 +181,7 @@ export interface AssistantResponse {
   pendingOperations: PendingCalendarOperation[] | null;
   requiresConfirmation: boolean;
   referencedEventIds?: string[];
+  updatedPreferences?: UserPreferences | null;
 }
 
 export interface ChatMessage {

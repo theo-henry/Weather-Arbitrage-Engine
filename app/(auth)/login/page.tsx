@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Zap } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { isSupabaseConfigured, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,6 +22,11 @@ function LoginForm() {
   const [demoLoading, setDemoLoading] = useState(false)
 
   async function handleLogin(loginEmail: string, loginPassword: string) {
+    if (!isSupabaseConfigured()) {
+      setError(SUPABASE_PUBLIC_ENV_ERROR)
+      return false
+    }
+
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword })
 

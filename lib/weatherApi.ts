@@ -1,5 +1,6 @@
 import type { City, TimeWindow, WeatherConditions, WeatherConditionType, Confidence } from './types';
-import { scoreRun, scoreStudy, scoreSocial, scoreFlight, scorePhoto } from './scoring';
+import { getDefaultUserPreferences, getResolvedActivityPreferences } from './preferences';
+import { scoreRun, scoreStudy, scoreSocial, scoreFlight, scorePhoto, scoreWindow } from './scoring';
 
 const CITY_LOCATIONS_MAP: Record<City, string[]> = {
   Madrid: ['Retiro Park', 'Casa de Campo', 'Madrid Río', 'El Capricho'],
@@ -103,17 +104,7 @@ export function buildWindowsFromApiData(
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const locations = CITY_LOCATIONS_MAP[city];
 
-  const defaultPrefs = {
-    activity: 'run' as const,
-    city,
-    usualTime: '17:00',
-    performanceVsComfort: 75,
-    windSensitivity: 'high' as const,
-    rainAvoidance: 'medium' as const,
-    timeBias: 'evening' as const,
-    sunsetBonus: true,
-    goldenHourPriority: true,
-  };
+  const defaultPreferences = getDefaultUserPreferences(city);
 
   // Map each hourly forecast to weather conditions
   const hourlyWeather: { weather: WeatherConditions; date: Date }[] = forecastHours.map((h) => {
@@ -141,11 +132,12 @@ export function buildWindowsFromApiData(
 
     const location = locations[i % locations.length];
 
-    const runResult = scoreRun(weather, { ...defaultPrefs, activity: 'run' }, hour);
-    const studyResult = scoreStudy(weather, { ...defaultPrefs, activity: 'study' }, hour);
-    const socialResult = scoreSocial(weather, { ...defaultPrefs, activity: 'social' }, hour, 20);
-    const flightResult = scoreFlight(weather, { ...defaultPrefs, activity: 'flight' }, hour);
-    const photoResult = scorePhoto(weather, { ...defaultPrefs, activity: 'photo' }, hour, 20, 7);
+    const runResult = scoreRun(weather, getResolvedActivityPreferences(defaultPreferences, 'run'), hour);
+    const studyResult = scoreStudy(weather, getResolvedActivityPreferences(defaultPreferences, 'study'), hour);
+    const socialResult = scoreSocial(weather, getResolvedActivityPreferences(defaultPreferences, 'social'), hour, 20);
+    const flightResult = scoreFlight(weather, getResolvedActivityPreferences(defaultPreferences, 'flight'), hour);
+    const photoResult = scorePhoto(weather, getResolvedActivityPreferences(defaultPreferences, 'photo'), hour, 20, 7);
+    const customResult = scoreWindow(weather, getResolvedActivityPreferences(defaultPreferences, 'custom'), hour);
 
     let confidence: Confidence = 'High';
     if (weather.precipitationProbability > 40 || weather.windSpeed > 20) confidence = 'Medium';
@@ -166,6 +158,7 @@ export function buildWindowsFromApiData(
         social: socialResult.score,
         flight: flightResult.score,
         photo: photoResult.score,
+        custom: customResult.score,
       },
       factorBreakdown: runResult.factors,
       confidence,
@@ -183,11 +176,12 @@ export function buildWindowsFromApiData(
     const date30 = new Date(date);
     date30.setMinutes(30);
 
-    const runResult30 = scoreRun(nextWeather, { ...defaultPrefs, activity: 'run' }, hour);
-    const studyResult30 = scoreStudy(nextWeather, { ...defaultPrefs, activity: 'study' }, hour);
-    const socialResult30 = scoreSocial(nextWeather, { ...defaultPrefs, activity: 'social' }, hour, 20);
-    const flightResult30 = scoreFlight(nextWeather, { ...defaultPrefs, activity: 'flight' }, hour);
-    const photoResult30 = scorePhoto(nextWeather, { ...defaultPrefs, activity: 'photo' }, hour, 20, 7);
+    const runResult30 = scoreRun(nextWeather, getResolvedActivityPreferences(defaultPreferences, 'run'), hour);
+    const studyResult30 = scoreStudy(nextWeather, getResolvedActivityPreferences(defaultPreferences, 'study'), hour);
+    const socialResult30 = scoreSocial(nextWeather, getResolvedActivityPreferences(defaultPreferences, 'social'), hour, 20);
+    const flightResult30 = scoreFlight(nextWeather, getResolvedActivityPreferences(defaultPreferences, 'flight'), hour);
+    const photoResult30 = scorePhoto(nextWeather, getResolvedActivityPreferences(defaultPreferences, 'photo'), hour, 20, 7);
+    const customResult30 = scoreWindow(nextWeather, getResolvedActivityPreferences(defaultPreferences, 'custom'), hour);
 
     let confidence30: Confidence = 'High';
     if (nextWeather.precipitationProbability > 40 || nextWeather.windSpeed > 20) confidence30 = 'Medium';
@@ -208,6 +202,7 @@ export function buildWindowsFromApiData(
         social: socialResult30.score,
         flight: flightResult30.score,
         photo: photoResult30.score,
+        custom: customResult30.score,
       },
       factorBreakdown: runResult30.factors,
       confidence: confidence30,

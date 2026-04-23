@@ -2,41 +2,112 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronLeft, MessageSquare } from 'lucide-react'
+import { ChevronLeft, MessageSquare, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Navbar } from '@/components/navbar'
 import { SchedulerChat } from '@/components/scheduler-chat'
 import { WeeklyCalendar } from '@/components/weekly-calendar'
 import { EventDialog } from '@/components/event-dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { CalendarStoreProvider, useCalendarStore } from '@/hooks/use-calendar-store'
+import { usePreferences } from '@/hooks/use-preferences'
 import { useWeatherData } from '@/hooks/use-weather-data'
+import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import { computeProtectedEventAnalyses } from '@/lib/weather-suggestions'
 import { AutoProtectPanel } from '@/components/auto-protect-panel'
 import { cn } from '@/lib/utils'
 import type { CalendarEvent, ProtectedEventAnalysis, SuggestedAlternative } from '@/lib/types'
 
 function SchedulerContent() {
-  const city = 'Madrid'
+  const [preferences] = usePreferences()
+  const city = preferences.city
   const { windows } = useWeatherData(city)
   const { state, dispatch } = useCalendarStore()
+  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
 
   // Event dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<Partial<CalendarEvent> | null>(null)
   const [dismissedFingerprints, setDismissedFingerprints] = useState<string[]>([])
   const [chatOpen, setChatOpen] = useState(true)
+  const [autoProtectOpen, setAutoProtectOpen] = useState(false)
+
+  const personalizedWindows = useMemo(
+    () => applyPreferenceScoresToWindows(windows, preferences),
+    [windows, preferences],
+  )
 
   const analyses = useMemo(
     () =>
-      computeProtectedEventAnalyses(state.events, windows, {
+      computeProtectedEventAnalyses(state.events, personalizedWindows, {
         dismissedFingerprints: new Set(dismissedFingerprints),
+        preferences,
+        timezone,
       }),
-    [state.events, windows, dismissedFingerprints]
+    [state.events, personalizedWindows, dismissedFingerprints, preferences, timezone]
   )
 
   const analysesById = useMemo(
     () => new Map(analyses.map((analysis) => [analysis.eventId, analysis])),
     [analyses]
   )
+
+  const autoProtectMeta = useMemo(() => {
+    const atRiskCount = analyses.filter(
+      (analysis) => analysis.isWeatherRelevant && analysis.riskLevel !== 'low'
+    ).length
+    const actionableCount = analyses.filter(
+      (analysis) => analysis.isWeatherRelevant && analysis.recommendedAlternative
+    ).length
+    const highRiskCount = analyses.filter(
+      (analysis) => analysis.isWeatherRelevant && analysis.riskLevel === 'high'
+    ).length
+
+    if (highRiskCount > 0) {
+      return {
+        atRiskCount,
+        actionableCount,
+        highRiskCount,
+        buttonTone: 'border-red-500/30 bg-red-500/8 hover:bg-red-500/12',
+        badgeTone: 'border-red-500/30 bg-red-500/12 text-red-600 dark:text-red-300',
+        summary:
+          actionableCount > 0
+            ? `${highRiskCount} urgent weather conflict${highRiskCount === 1 ? '' : 's'} with safer moves ready.`
+            : `${highRiskCount} urgent weather conflict${highRiskCount === 1 ? '' : 's'} detected.`,
+      }
+    }
+
+    if (atRiskCount > 0) {
+      return {
+        atRiskCount,
+        actionableCount,
+        highRiskCount,
+        buttonTone: 'border-amber-500/30 bg-amber-500/8 hover:bg-amber-500/12',
+        badgeTone: 'border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-300',
+        summary:
+          actionableCount > 0
+            ? `${actionableCount} weather-aware schedule improvement${actionableCount === 1 ? '' : 's'} ready to review.`
+            : `${atRiskCount} weather issue${atRiskCount === 1 ? '' : 's'} worth checking.`,
+      }
+    }
+
+    return {
+      atRiskCount,
+      actionableCount,
+      highRiskCount,
+      buttonTone: 'border-green-500/25 bg-green-500/5 hover:bg-green-500/10',
+      badgeTone: 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300',
+      summary: 'No active weather conflicts right now.',
+    }
+  }, [analyses])
 
   const handleCreateEvent = useCallback((startTime: Date, endTime: Date) => {
     setEditingEvent({
@@ -89,6 +160,42 @@ function SchedulerContent() {
     )
   }, [])
 
+  const autoProtectTrigger = (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => setAutoProtectOpen(true)}
+      className={cn(
+        'h-auto w-full flex-col items-start rounded-xl px-3 py-2 text-left shadow-sm',
+        autoProtectMeta.buttonTone
+      )}
+    >
+      <div className="flex w-full items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-2">
+          {autoProtectMeta.atRiskCount > 0 ? (
+            <ShieldAlert
+              className={cn(
+                'h-4 w-4',
+                autoProtectMeta.highRiskCount > 0 ? 'text-red-500' : 'text-amber-500'
+              )}
+            />
+          ) : (
+            <ShieldCheck className="h-4 w-4 text-green-500" />
+          )}
+          <span className="text-xs font-semibold">Auto-Protect</span>
+        </span>
+        <Badge variant="outline" className={cn('text-[10px]', autoProtectMeta.badgeTone)}>
+          {autoProtectMeta.atRiskCount === 0
+            ? 'Clear'
+            : `${autoProtectMeta.atRiskCount} issue${autoProtectMeta.atRiskCount === 1 ? '' : 's'}`}
+        </Badge>
+      </div>
+      <p className="w-full text-left text-[11px] leading-relaxed text-muted-foreground">
+        {autoProtectMeta.summary}
+      </p>
+    </Button>
+  )
+
   return (
     <div className="h-screen bg-background overflow-hidden">
       <Navbar />
@@ -115,17 +222,12 @@ function SchedulerContent() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <AutoProtectPanel
-                analyses={analyses}
-                onMove={(analysis) =>
-                  analysis.recommendedAlternative &&
-                  handleAcceptSuggestion(analysis.eventId, analysis.recommendedAlternative)
-                }
-                onDismiss={handleDismissSuggestion}
-              />
+              <div className="border-b border-border/50 bg-card/65 px-4 pb-3 pt-4 pr-12 backdrop-blur-sm">
+                {autoProtectTrigger}
+              </div>
               <SchedulerChat
                 city={city}
-                windows={windows}
+                windows={personalizedWindows}
                 className="min-h-0 flex-1"
               />
             </div>
@@ -141,7 +243,7 @@ function SchedulerContent() {
             )}
           >
             <WeeklyCalendar
-              windows={windows}
+              windows={personalizedWindows}
               analyses={analysesById}
               onAcceptSuggestion={handleAcceptSuggestion}
               onDismissSuggestion={handleDismissSuggestion}
@@ -173,6 +275,52 @@ function SchedulerContent() {
         </AnimatePresence>
       </main>
 
+      <Sheet open={autoProtectOpen} onOpenChange={setAutoProtectOpen}>
+        <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+          <SheetHeader className="border-b border-border/50 bg-card/80 pr-12 backdrop-blur-sm">
+            <div className="flex items-start gap-3">
+              {autoProtectMeta.atRiskCount > 0 ? (
+                <ShieldAlert
+                  className={cn(
+                    'mt-0.5 h-5 w-5 shrink-0',
+                    autoProtectMeta.highRiskCount > 0 ? 'text-red-500' : 'text-amber-500'
+                  )}
+                />
+              ) : (
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-green-500" />
+              )}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <SheetTitle>Auto-Protect Schedule</SheetTitle>
+                  <Badge variant="outline" className={cn('text-[10px]', autoProtectMeta.badgeTone)}>
+                    {autoProtectMeta.atRiskCount === 0
+                      ? 'All clear'
+                      : `${autoProtectMeta.atRiskCount} at risk`}
+                  </Badge>
+                </div>
+                <SheetDescription className="mt-1">
+                  Review weather-driven conflicts and one-click safer moves when you want them.
+                </SheetDescription>
+              </div>
+            </div>
+          </SheetHeader>
+
+          <ScrollArea className="min-h-0 flex-1">
+            <AutoProtectPanel
+              analyses={analyses}
+              onMove={(analysis) =>
+                analysis.recommendedAlternative &&
+                handleAcceptSuggestion(analysis.eventId, analysis.recommendedAlternative)
+              }
+              onDismiss={handleDismissSuggestion}
+              showHeader={false}
+              limit={analyses.length}
+              className="bg-transparent"
+            />
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
+
       {/* Event Dialog */}
       <EventDialog
         open={dialogOpen}
@@ -180,7 +328,7 @@ function SchedulerContent() {
         event={editingEvent}
         onSave={handleSaveEvent}
         onDelete={handleDeleteEvent}
-        windows={windows}
+        windows={personalizedWindows}
       />
     </div>
   )

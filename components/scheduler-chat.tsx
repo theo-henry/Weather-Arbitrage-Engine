@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useCalendarStore } from '@/hooks/use-calendar-store'
+import { usePreferences } from '@/hooks/use-preferences'
 import type {
   AssistantRequest,
   AssistantResponse,
@@ -70,6 +71,7 @@ function stripPendingDecorators(messages: ChatMessage[]) {
 
 export function SchedulerChat({ city, windows, className }: SchedulerChatProps) {
   const { state, dispatch } = useCalendarStore()
+  const [preferences, setPreferences] = usePreferences()
   const [messages, setMessages] = useState<ChatMessage[]>([
     createMessage(
       'assistant',
@@ -130,6 +132,7 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
         events: state.events,
         windows,
         city,
+        preferences,
         now: new Date().toISOString(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         pendingOperations: activePendingOperations,
@@ -153,6 +156,10 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
         requiresConfirmation: data.requiresConfirmation,
         referencedEventIds: data.referencedEventIds,
       })
+
+      if (data.updatedPreferences) {
+        setPreferences(data.updatedPreferences)
+      }
 
       setMessages((prev) => [...prev, assistantMessage])
       setPendingOperations(data.pendingOperations)
@@ -228,20 +235,22 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col overflow-hidden', className)}>
-      <div className="flex items-center gap-3 p-4 border-b border-border/50">
-        <div className="relative">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-amber-500 flex items-center justify-center">
-            <Sparkles className="h-5 w-5 text-white" />
+      <div className="border-b border-border/50 p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="relative">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-amber-500">
+              <Sparkles className="h-5 w-5 text-white" />
+            </div>
+            <motion.div
+              className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-amber-500"
+              animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0, 0.5] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
           </div>
-          <motion.div
-            className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-amber-500"
-            animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0, 0.5] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          />
-        </div>
-        <div>
-          <h3 className="font-semibold">AI Scheduler</h3>
-          <p className="text-xs text-muted-foreground">Weather-aware, calendar-aware, confirmation-gated</p>
+          <div className="min-w-0">
+            <h3 className="font-semibold">AI Scheduler</h3>
+            <p className="text-xs text-muted-foreground">Weather-aware, calendar-aware, confirmation-gated</p>
+          </div>
         </div>
       </div>
 

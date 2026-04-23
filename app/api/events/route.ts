@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import type { CalendarEvent } from '@/lib/types'
 
 export async function GET() {
+  if (!getSupabasePublicEnv()) {
+    return NextResponse.json({ error: SUPABASE_PUBLIC_ENV_ERROR }, { status: 503 })
+  }
+
   const supabase = await createClient()
   const {
     data: { user },
@@ -28,6 +33,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!getSupabasePublicEnv()) {
+    return NextResponse.json({ error: SUPABASE_PUBLIC_ENV_ERROR }, { status: 503 })
+  }
+
   const supabase = await createClient()
   const {
     data: { user },

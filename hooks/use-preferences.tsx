@@ -1,56 +1,64 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { getDefaultUserPreferences, normalizeUserPreferences } from '@/lib/preferences'
 import type { UserPreferences } from '@/lib/types'
 import { useUser } from '@/hooks/use-user'
 
-const DEFAULT_PREFERENCES: UserPreferences = {
-  activity: 'run',
-  city: 'Madrid',
-  usualTime: '17:00',
-  performanceVsComfort: 75,
-  windSensitivity: 'high',
-  rainAvoidance: 'medium',
-  timeBias: 'evening',
-  sunsetBonus: true,
-  goldenHourPriority: true,
+type PreferencesSetter = (
+  next: UserPreferences | ((prev: UserPreferences) => UserPreferences),
+) => void
+
+interface PreferencesContextValue {
+  preferences: UserPreferences
+  setPreferences: PreferencesSetter
 }
 
-export function usePreferences(): [
-  UserPreferences,
-  (next: UserPreferences | ((prev: UserPreferences) => UserPreferences)) => void,
-] {
+const PreferencesContext = createContext<PreferencesContextValue | null>(null)
+
+export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser()
-  const [prefs, setPrefsState] = useState<UserPreferences>(DEFAULT_PREFERENCES)
+  const [preferences, setPreferencesState] = useState<UserPreferences>(() => getDefaultUserPreferences())
   const hydrated = useRef(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (loading) return
+
     if (!user) {
       hydrated.current = true
+      setPreferencesState(getDefaultUserPreferences())
       return
     }
+
+    hydrated.current = false
     let cancelled = false
+
     fetch('/api/preferences')
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then((data) => {
         if (cancelled) return
-        if (data?.preferences) setPrefsState(data.preferences)
+        setPreferencesState(normalizeUserPreferences(data?.preferences))
         hydrated.current = true
       })
       .catch(() => {
+        if (cancelled) return
+        setPreferencesState(getDefaultUserPreferences())
         hydrated.current = true
       })
+
     return () => {
       cancelled = true
     }
   }, [user, loading])
 
-  const setPrefs = useCallback(
-    (next: UserPreferences | ((prev: UserPreferences) => UserPreferences)) => {
-      setPrefsState((prev) => {
-        const value = typeof next === 'function' ? (next as (p: UserPreferences) => UserPreferences)(prev) : next
+  const setPreferences = useCallback<PreferencesSetter>(
+    (next) => {
+      setPreferencesState((prev) => {
+        const value = normalizeUserPreferences(
+          typeof next === 'function' ? (next as (current: UserPreferences) => UserPreferences)(prev) : next,
+        )
+
         if (user && hydrated.current) {
           if (saveTimer.current) clearTimeout(saveTimer.current)
           saveTimer.current = setTimeout(() => {
@@ -59,13 +67,31 @@ export function usePreferences(): [
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ preferences: value }),
             }).catch(() => {})
-          }, 400)
+          }, 300)
         }
+
         return value
       })
     },
     [user],
   )
 
-  return [prefs, setPrefs]
+  const value = useMemo(
+    () => ({
+      preferences,
+      setPreferences,
+    }),
+    [preferences, setPreferences],
+  )
+
+  return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>
+}
+
+export function usePreferences(): [UserPreferences, PreferencesSetter] {
+  const context = useContext(PreferencesContext)
+  if (!context) {
+    throw new Error('usePreferences must be used within PreferencesProvider')
+  }
+
+  return [context.preferences, context.setPreferences]
 }

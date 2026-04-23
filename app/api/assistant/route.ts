@@ -6,7 +6,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as AssistantRequest
 
-    if (!body || !Array.isArray(body.messages) || !Array.isArray(body.events) || !Array.isArray(body.windows)) {
+    if (
+      !body ||
+      !Array.isArray(body.messages) ||
+      !Array.isArray(body.events) ||
+      !Array.isArray(body.windows) ||
+      !body.preferences
+    ) {
       return NextResponse.json({ error: 'Invalid assistant request payload.' }, { status: 400 })
     }
 

@@ -11,6 +11,8 @@ interface AutoProtectPanelProps {
   analyses: ProtectedEventAnalysis[]
   onMove: (analysis: ProtectedEventAnalysis) => void
   onDismiss: (analysis: ProtectedEventAnalysis) => void
+  showHeader?: boolean
+  limit?: number
   className?: string
 }
 
@@ -30,6 +32,8 @@ export function AutoProtectPanel({
   analyses,
   onMove,
   onDismiss,
+  showHeader = true,
+  limit = 3,
   className,
 }: AutoProtectPanelProps) {
   const actionable = analyses
@@ -41,26 +45,37 @@ export function AutoProtectPanel({
         new Date(a.event.startTime).getTime() - new Date(b.event.startTime).getTime()
       )
     })
-    .slice(0, 3)
+    .slice(0, limit)
+
+  const atRiskCount = analyses.filter(
+    (analysis) => analysis.isWeatherRelevant && analysis.riskLevel !== 'low'
+  ).length
 
   return (
-    <div className={cn('border-b border-border/50 bg-card/70 backdrop-blur-sm', className)}>
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-amber-500" />
-            <h3 className="text-sm font-semibold">Auto-Protect Schedule</h3>
-            <Badge variant="outline" className="text-[10px]">
-              {analyses.filter((analysis) => analysis.isWeatherRelevant && analysis.riskLevel !== 'low').length} at risk
-            </Badge>
+    <div
+      className={cn(
+        showHeader && 'border-b border-border/50 bg-card/70 backdrop-blur-sm',
+        className
+      )}
+    >
+      {showHeader ? (
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-amber-500" />
+              <h3 className="text-sm font-semibold">Auto-Protect Schedule</h3>
+              <Badge variant="outline" className="text-[10px]">
+                {atRiskCount} at risk
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Proactive weather-risk detection with one-click safer moves.
+            </p>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Proactive weather-risk detection with one-click safer moves.
-          </p>
         </div>
-      </div>
+      ) : null}
 
-      <div className="space-y-2 px-4 pb-4">
+      <div className={cn('space-y-2', showHeader ? 'px-4 pb-4' : 'p-4')}>
         {actionable.length === 0 ? (
           <div className="rounded-xl border border-green-500/20 bg-green-500/5 px-3 py-3 text-sm">
             <div className="flex items-center gap-2">

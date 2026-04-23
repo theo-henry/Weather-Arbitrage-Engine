@@ -4,10 +4,12 @@ import type {
   ProtectedEventAnalysis,
   SuggestedAlternative,
   TimeWindow,
+  UserPreferences,
   WeatherRiskLevel,
   WeatherRelevanceSource,
 } from './types'
 import { isSameDay } from 'date-fns'
+import { formatBlockedTimeRule, getBlockedTimeMatches, isTimeRangeBlocked } from './preferences'
 
 const GOOD_SCORE_THRESHOLD = 70
 const HIGH_RISK_THRESHOLD = 50
@@ -85,10 +87,11 @@ function getRiskReasons(currentWindows: TimeWindow[]): string[] {
 
 function getWeatherReason(
   currentWindows: TimeWindow[],
-  suggestedWindows: TimeWindow[]
+  suggestedWindows: TimeWindow[],
+  blockedReason?: string | null,
 ): string {
   const currentReasons = getRiskReasons(currentWindows)
-  const currentReason = currentReasons.join(', ')
+  const currentReason = blockedReason ? `${blockedReason}; ${currentReasons.join(', ')}` : currentReasons.join(', ')
 
   if (suggestedWindows.length > 0) {
     const suggestedAvg = getAverageWeather(suggestedWindows)
@@ -182,11 +185,16 @@ function getConflictingEvents(
 export function computeSuggestion(
   event: CalendarEvent,
   windows: TimeWindow[],
-  events: CalendarEvent[] = []
+  events: CalendarEvent[] = [],
+  options?: {
+    preferences?: UserPreferences
+    timezone?: string
+  }
 ): SuggestedAlternative | null {
   const relevance = inferWeatherRelevance(event)
   if (!relevance.isWeatherRelevant || !relevance.scoredActivity) return null
 
+  const timezone = options?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
   const eventStart = new Date(event.startTime)
   const eventEnd = new Date(event.endTime)
   const durationMs = eventEnd.getTime() - eventStart.getTime()
@@ -194,8 +202,16 @@ export function computeSuggestion(
 
   const currentWindows = getOverlappingWindows(eventStart, eventEnd, windows)
   const currentScore = getAverageScore(currentWindows, relevance.scoredActivity)
+  const blockedRules =
+    options?.preferences && event.activity
+      ? getBlockedTimeMatches(options.preferences, event.activity, eventStart, eventEnd, timezone)
+      : []
+  const blockedReason =
+    blockedRules.length > 0
+      ? `blocked by your schedule rule (${blockedRules.map((rule) => formatBlockedTimeRule(rule)).join(', ')})`
+      : null
 
-  if (currentScore < 0 || currentScore >= GOOD_SCORE_THRESHOLD) return null
+  if (currentScore < 0 || (currentScore >= GOOD_SCORE_THRESHOLD && !blockedReason)) return null
 
   const sameDayWindows = windows
     .filter((w) => {
@@ -227,6 +243,14 @@ export function computeSuggestion(
     const blockEnd = new Date(eventStart)
     blockEnd.setHours(eh, em, 0, 0)
 
+    if (
+      options?.preferences &&
+      event.activity &&
+      isTimeRangeBlocked(options.preferences, event.activity, blockStart, blockEnd, timezone)
+    ) {
+      continue
+    }
+
     if (getConflictingEvents(blockStart, blockEnd, events, event.id).length > 0) continue
 
     if (
@@ -248,7 +272,7 @@ export function computeSuggestion(
     startTime: bestStart.toISOString(),
     endTime: bestEnd.toISOString(),
     score: bestScore,
-    reason: getWeatherReason(currentWindows, bestWindows),
+    reason: getWeatherReason(currentWindows, bestWindows, blockedReason),
   }
 }
 
@@ -257,9 +281,12 @@ export function computeProtectedEventAnalyses(
   windows: TimeWindow[],
   options?: {
     dismissedFingerprints?: Set<string>
+    preferences?: UserPreferences
+    timezone?: string
   }
 ): ProtectedEventAnalysis[] {
   const dismissedFingerprints = options?.dismissedFingerprints ?? new Set<string>()
+  const timezone = options?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
 
   return events.map((event) => {
     const relevance = inferWeatherRelevance(event)
@@ -278,19 +305,40 @@ export function computeProtectedEventAnalyses(
 
     const currentWindows = getOverlappingWindows(new Date(event.startTime), new Date(event.endTime), windows)
     const currentScore = getAverageScore(currentWindows, relevance.scoredActivity)
+    const blockedRules =
+      options?.preferences && event.activity
+        ? getBlockedTimeMatches(
+            options.preferences,
+            event.activity,
+            new Date(event.startTime),
+            new Date(event.endTime),
+            timezone,
+          )
+        : []
+    const blockedByPreference = blockedRules.length > 0
     const recommendedAlternative =
-      currentScore >= 0 && currentScore < GOOD_SCORE_THRESHOLD
-        ? computeSuggestion(event, windows, events)
+      currentScore >= 0 && (currentScore < GOOD_SCORE_THRESHOLD || blockedByPreference)
+        ? computeSuggestion(event, windows, events, {
+            preferences: options?.preferences,
+            timezone,
+          })
         : null
 
     const fingerprint = getSuggestionFingerprint(event, recommendedAlternative, currentScore >= 0 ? currentScore : undefined)
     const dismissed = dismissedFingerprints.has(fingerprint)
+    const riskReasons = currentScore >= 0 ? getRiskReasons(currentWindows) : ['No weather data available']
+
+    if (blockedByPreference) {
+      riskReasons.unshift(
+        `Blocked by your schedule rule: ${blockedRules.map((rule) => formatBlockedTimeRule(rule)).join(', ')}`,
+      )
+    }
 
     return {
       eventId: event.id,
       event,
-      riskLevel: currentScore >= 0 ? getRiskLevel(currentScore) : 'low',
-      riskReasons: currentScore >= 0 ? getRiskReasons(currentWindows) : ['No weather data available'],
+      riskLevel: blockedByPreference ? 'high' : currentScore >= 0 ? getRiskLevel(currentScore) : 'low',
+      riskReasons,
       isWeatherRelevant: true,
       weatherRelevanceSource: relevance.relevanceSource,
       currentScore: currentScore >= 0 ? currentScore : undefined,
@@ -303,10 +351,14 @@ export function computeProtectedEventAnalyses(
 
 export function computeAllSuggestions(
   events: CalendarEvent[],
-  windows: TimeWindow[]
+  windows: TimeWindow[],
+  options?: {
+    preferences?: UserPreferences
+    timezone?: string
+  }
 ): Map<string, SuggestedAlternative | null> {
   const result = new Map<string, SuggestedAlternative | null>()
-  const analyses = computeProtectedEventAnalyses(events, windows)
+  const analyses = computeProtectedEventAnalyses(events, windows, options)
   for (const analysis of analyses) {
     if (analysis.isWeatherRelevant) {
       result.set(analysis.eventId, analysis.recommendedAlternative ?? null)
