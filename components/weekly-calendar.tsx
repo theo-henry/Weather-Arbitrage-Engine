@@ -8,9 +8,18 @@ import {
   CloudOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { WeatherIcon } from '@/components/weather-icon'
 import { WeatherSlotTooltip } from '@/components/weather-slot-tooltip'
 import { CalendarEventBlock, SuggestionGhost, SLOT_HEIGHT, DAY_START_HOUR } from '@/components/calendar-event-block'
+import { MonthView } from '@/components/month-view'
+import { DayView } from '@/components/day-view'
 import { useCalendarStore } from '@/hooks/use-calendar-store'
 import type { CalendarEvent, ProtectedEventAnalysis, SuggestedAlternative, TimeWindow } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -25,6 +34,8 @@ import {
   setHours,
   setMinutes,
 } from 'date-fns'
+
+type ViewMode = 'week' | 'month' | 'day'
 
 const DAY_END_HOUR = 24
 const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * 2 // 48 slots
@@ -115,6 +126,8 @@ export function WeeklyCalendar({
   className,
 }: WeeklyCalendarProps) {
   const { state, dispatch } = useCalendarStore()
+  const [viewMode, setViewMode] = useState<ViewMode>('week')
+  const [selectedDate, setSelectedDate] = useState(new Date())
   const [weekOffset, setWeekOffset] = useState(0)
   const [weatherDays, setWeatherDays] = useState<Set<number>>(
     () => new Set([0, 1, 2, 3, 4, 5, 6]),
@@ -438,6 +451,79 @@ export function WeeklyCalendar({
 
   const todayIndex = days.findIndex((d) => isToday(d))
 
+  // View mode switch handlers
+  const handleDayClick = useCallback((date: Date) => {
+    setSelectedDate(date)
+    setViewMode('day')
+  }, [])
+
+  const handleMonthNavigate = useCallback((date: Date) => {
+    setSelectedDate(date)
+  }, [])
+
+  const handleDayNavigate = useCallback((date: Date) => {
+    setSelectedDate(date)
+  }, [])
+
+  // Render month or day view when selected
+  if (viewMode === 'month') {
+    return (
+      <div className={cn('relative flex h-full min-h-0 flex-col overflow-hidden', className)}>
+        {/* View mode selector - floats over the month view header */}
+        <div className="absolute top-2 right-3 z-10">
+          <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+            <SelectTrigger size="sm" className="h-7 text-xs w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="day">Day</SelectItem>
+              <SelectItem value="week">Week</SelectItem>
+              <SelectItem value="month">Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <MonthView
+          currentDate={selectedDate}
+          onNavigate={handleMonthNavigate}
+          onDayClick={handleDayClick}
+          onEditEvent={onEditEvent}
+          className="h-full"
+        />
+      </div>
+    )
+  }
+
+  if (viewMode === 'day') {
+    return (
+      <div className={cn('relative flex h-full min-h-0 flex-col overflow-hidden', className)}>
+        {/* View mode selector - floats over the day view header */}
+        <div className="absolute top-2 right-3 z-10">
+          <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+            <SelectTrigger size="sm" className="h-7 text-xs w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="day">Day</SelectItem>
+              <SelectItem value="week">Week</SelectItem>
+              <SelectItem value="month">Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <DayView
+          currentDate={selectedDate}
+          onNavigate={handleDayNavigate}
+          windows={windows}
+          analyses={analyses}
+          onAcceptSuggestion={onAcceptSuggestion}
+          onDismissSuggestion={onDismissSuggestion}
+          onCreateEvent={onCreateEvent}
+          onEditEvent={onEditEvent}
+          className="h-full"
+        />
+      </div>
+    )
+  }
+
   return (
     <div className={cn('flex h-full min-h-0 flex-col overflow-hidden', className)}>
       {/* Header */}
@@ -461,16 +547,28 @@ export function WeeklyCalendar({
             {format(currentWeekStart, 'MMM d')} – {format(endOfWeek(currentWeekStart, { weekStartsOn: 1 }), 'MMM d, yyyy')}
           </span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
-          onClick={toggleAllWeatherDays}
-          title={allDaysOn ? 'Hide weather on all days' : 'Show weather on all days'}
-        >
-          {allDaysOn ? <Cloud className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
-          Weather
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={toggleAllWeatherDays}
+            title={allDaysOn ? 'Hide weather on all days' : 'Show weather on all days'}
+          >
+            {allDaysOn ? <Cloud className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
+            Weather
+          </Button>
+          <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+            <SelectTrigger size="sm" className="h-7 text-xs w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="day">Day</SelectItem>
+              <SelectItem value="week">Week</SelectItem>
+              <SelectItem value="month">Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Day headers */}
@@ -601,8 +699,15 @@ export function WeeklyCalendar({
                           }}
                         />
                       )}
-                      {/* Weather icon every 3 hours */}
-                      {showWeather && window && hour % 3 === 0 && (
+                      {/* Weather icon every 3 hours (hidden when an event overlaps) */}
+                      {showWeather && window && hour % 3 === 0 && !dayEvents.some((ev) => {
+                        const evStart = new Date(ev.startTime)
+                        const evEnd = new Date(ev.endTime)
+                        const evStartMin = evStart.getHours() * 60 + evStart.getMinutes()
+                        const evEndMin = evEnd.getHours() * 60 + evEnd.getMinutes()
+                        const iconMin = hour * 60
+                        return evStartMin <= iconMin && evEndMin > iconMin
+                      }) && (
                         <div
                           className="absolute right-1 flex items-center gap-0.5 pointer-events-none z-[1]"
                           style={{ top: (hour - DAY_START_HOUR) * 2 * SLOT_HEIGHT + 2 }}
