@@ -126,7 +126,7 @@ export interface CalendarEvent {
   weatherScore?: number;
   weatherRisk?: WeatherRisk;
   suggestedAlternative?: SuggestedAlternative | null;
-  createdVia: 'ui' | 'chat' | 'mock';
+  createdVia: 'ui' | 'chat' | 'mock' | 'compare';
 }
 
 export interface ProtectedEventAnalysis {

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft, MessageSquare, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Navbar } from '@/components/navbar'
@@ -32,6 +33,7 @@ function SchedulerContent() {
   const { windows } = useWeatherData(city)
   const { state, dispatch } = useCalendarStore()
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
+  const searchParams = useSearchParams()
 
   // Event dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -39,6 +41,16 @@ function SchedulerContent() {
   const [dismissedFingerprints, setDismissedFingerprints] = useState<string[]>([])
   const [chatOpen, setChatOpen] = useState(true)
   const [autoProtectOpen, setAutoProtectOpen] = useState(false)
+  const [highlightEventId, setHighlightEventId] = useState<string | null>(null)
+
+  // Read highlight param from URL and clear after 5 seconds
+  useEffect(() => {
+    const id = searchParams.get('highlight')
+    if (!id) return
+    setHighlightEventId(id)
+    const timer = setTimeout(() => setHighlightEventId(null), 5000)
+    return () => clearTimeout(timer)
+  }, [searchParams])
 
   const personalizedWindows = useMemo(
     () => applyPreferenceScoresToWindows(windows, preferences),
@@ -249,6 +261,7 @@ function SchedulerContent() {
               onDismissSuggestion={handleDismissSuggestion}
               onCreateEvent={handleCreateEvent}
               onEditEvent={handleEditEvent}
+              highlightEventId={highlightEventId}
               className="h-full min-h-0"
             />
           </motion.div>
@@ -337,7 +350,9 @@ function SchedulerContent() {
 export default function SchedulerPage() {
   return (
     <CalendarStoreProvider>
-      <SchedulerContent />
+      <Suspense fallback={null}>
+        <SchedulerContent />
+      </Suspense>
     </CalendarStoreProvider>
   )
 }

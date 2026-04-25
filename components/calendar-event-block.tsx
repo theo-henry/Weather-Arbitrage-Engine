@@ -37,6 +37,7 @@ interface CalendarEventBlockProps {
   lane: number
   totalLanes: number
   analysis?: ProtectedEventAnalysis
+  isHighlighted?: boolean
   onEdit: (event: CalendarEvent) => void
   onAcceptSuggestion: (eventId: string, suggestion: SuggestedAlternative) => void
   onDismissSuggestion: (analysis: ProtectedEventAnalysis) => void
@@ -59,6 +60,7 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
   lane,
   totalLanes,
   analysis,
+  isHighlighted,
   onEdit,
   onAcceptSuggestion,
   onDismissSuggestion,
@@ -80,15 +82,21 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
+      animate={
+        isHighlighted
+          ? { opacity: 1, scale: [1, 1.04, 1, 1.04, 1], boxShadow: ['0 0 0 0px rgba(99,102,241,0)', '0 0 0 4px rgba(99,102,241,0.5)', '0 0 0 0px rgba(99,102,241,0)', '0 0 0 4px rgba(99,102,241,0.5)', '0 0 0 0px rgba(99,102,241,0)'] }
+          : { opacity: 1, scale: 1 }
+      }
+      transition={isHighlighted ? { duration: 2, times: [0, 0.25, 0.5, 0.75, 1] } : undefined}
       className={cn(
         'absolute rounded-md border-l-[3px] cursor-pointer group select-none overflow-hidden',
         colors.bg,
         colors.border,
+        isHighlighted && 'ring-2 ring-violet-500/60 shadow-[0_0_0_2px_rgba(139,92,246,0.3)]',
         showRiskHighlight && riskLevel === 'high' && 'ring-1 ring-red-500/40 shadow-[0_0_0_1px_rgba(239,68,68,0.2)]',
         showRiskHighlight && riskLevel === 'medium' && 'ring-1 ring-amber-500/40 shadow-[0_0_0_1px_rgba(245,158,11,0.18)]',
       )}
-      style={{ top, height, left, width, zIndex: 10 }}
+      style={{ top, height, left, width, zIndex: isHighlighted ? 20 : 10 }}
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).dataset.resize) return
         onMoveStart(e, event)

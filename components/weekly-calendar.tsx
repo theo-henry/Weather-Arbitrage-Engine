@@ -113,6 +113,7 @@ interface WeeklyCalendarProps {
   onDismissSuggestion: (analysis: ProtectedEventAnalysis) => void
   onCreateEvent: (startTime: Date, endTime: Date) => void
   onEditEvent: (event: CalendarEvent) => void
+  highlightEventId?: string | null
   className?: string
 }
 
@@ -123,6 +124,7 @@ export function WeeklyCalendar({
   onDismissSuggestion,
   onCreateEvent,
   onEditEvent,
+  highlightEventId,
   className,
 }: WeeklyCalendarProps) {
   const { state, dispatch } = useCalendarStore()
@@ -730,6 +732,7 @@ export function WeeklyCalendar({
                         lane={laneInfo.lane}
                         totalLanes={laneInfo.totalLanes}
                         analysis={analyses.get(event.id)}
+                        isHighlighted={highlightEventId === event.id}
                         onEdit={onEditEvent}
                         onAcceptSuggestion={onAcceptSuggestion}
                         onDismissSuggestion={onDismissSuggestion}

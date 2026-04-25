@@ -27,10 +27,10 @@ interface SchedulerChatProps {
 }
 
 const suggestedPrompts = [
-  'What do I have tomorrow?',
-  'Schedule a 45-minute run tomorrow morning',
-  'Move my picnic to the best weather slot on Saturday',
-  'Is Friday 6:30pm good for terrace drinks?',
+  'I want to go for a run tomorrow morning',
+  'Schedule a 45-min walk Saturday afternoon',
+  'I want to do a photo walk Friday at sunset',
+  'Schedule drinks with friends this Friday evening',
 ]
 
 function createMessage(
@@ -74,8 +74,8 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
   const [preferences, setPreferences] = usePreferences()
   const [messages, setMessages] = useState<ChatMessage[]>([
     createMessage(
-      'assistant',
-      'Hi! I’m your AI scheduling assistant. I can inspect your calendar, find weather-aware times, and draft schedule changes for your approval.'
+      ‘assistant’,
+      `Hi! Tell me what you’d like to do and when — for example "I want to go for a run tomorrow morning" or "Schedule a walk on Saturday afternoon." I’ll check the weather and add it to your calendar.`
     ),
   ])
   const [input, setInput] = useState('')
@@ -248,8 +248,8 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
             />
           </div>
           <div className="min-w-0">
-            <h3 className="font-semibold">AI Scheduler</h3>
-            <p className="text-xs text-muted-foreground">Weather-aware, calendar-aware, confirmation-gated</p>
+            <h3 className="font-semibold">Quick Scheduler</h3>
+            <p className="text-xs text-muted-foreground">Tell me what to do and when — I'll handle the rest</p>
           </div>
         </div>
       </div>
