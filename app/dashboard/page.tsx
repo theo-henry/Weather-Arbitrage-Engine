@@ -10,7 +10,6 @@ import { PreferencePanel } from '@/components/preference-panel'
 import { RecommendationCard } from '@/components/recommendation-card'
 import { RankedList } from '@/components/ranked-list'
 import { TimelineChart } from '@/components/timeline-chart'
-import { FactorChart } from '@/components/factor-chart'
 import { InsightPanel } from '@/components/insight-panel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -215,17 +214,6 @@ export default function DashboardPage() {
                   usualTime={preferences.usualTime}
                 />
               </div>
-
-              {/* Factor Chart */}
-              {bestWindow && (
-                <div className="rounded-2xl border border-border/50 bg-card p-4 sm:p-6">
-                  <FactorChart
-                    bestWindow={bestWindow}
-                    usualWindow={usualWindow}
-                    activity={preferences.activity}
-                  />
-                </div>
-              )}
 
               {/* Insights */}
               <div id="insights">
