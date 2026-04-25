@@ -1,8 +1,9 @@
-"use client"
+'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { ActivitySelector } from '@/components/activity-selector'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -10,9 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   formatBlockedTimeRule,
   removeBlockedTimeRule,
+  sortRules,
+  timeStringToMinutes,
   upsertBlockedTimeRule,
 } from '@/lib/preferences'
 import type { Activity, BlockedTimeRule, UserPreferences, WeekdayKey } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 interface SchedulingRulesPanelProps {
   preferences: UserPreferences
@@ -35,6 +39,21 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
   return `${hours.toString().padStart(2, '0')}:${minutes}`
 })
 
+const GRID_START_HOUR = 5
+const GRID_END_HOUR = 24
+const SLOT_MINUTES = 30
+const GRID_SLOTS = Array.from({ length: ((GRID_END_HOUR - GRID_START_HOUR) * 60) / SLOT_MINUTES }, (_, index) => {
+  const minutes = GRID_START_HOUR * 60 + index * SLOT_MINUTES
+  return {
+    index,
+    startTime: minutesToTimeString(minutes),
+    endTime: minutesToTimeString(minutes + SLOT_MINUTES),
+    label: minutes % 60 === 0 ? minutesToTimeString(minutes) : '',
+  }
+})
+
+type CellIntent = 'block' | 'unblock'
+
 export function SchedulingRulesPanel({
   preferences,
   onPreferencesChange,
@@ -43,6 +62,9 @@ export function SchedulingRulesPanel({
   const [day, setDay] = useState<WeekdayKey>('mon')
   const [startTime, setStartTime] = useState('07:00')
   const [endTime, setEndTime] = useState('09:00')
+  const dragIntent = useRef<CellIntent | null>(null)
+  const dragCells = useRef<Set<string> | null>(null)
+  const touchedDuringDrag = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     setActivity(preferences.activity)
@@ -50,6 +72,8 @@ export function SchedulingRulesPanel({
 
   const rules = useMemo(() => preferences.blockedTimeRules[activity] ?? [], [activity, preferences.blockedTimeRules])
   const isTimeRangeValid = startTime < endTime
+  const blockedCells = useMemo(() => rulesToBlockedCells(rules), [rules])
+  const allWeekRangeLabel = `${startTime}-${endTime}`
 
   const updateRules = (nextRules: BlockedTimeRule[]) => {
     onPreferencesChange({
@@ -66,17 +90,71 @@ export function SchedulingRulesPanel({
     updateRules(upsertBlockedTimeRule(rules, { day, startTime, endTime }))
   }
 
+  const handleAddAllWeekRule = () => {
+    if (!isTimeRangeValid) return
+
+    const nextRules = WEEKDAY_OPTIONS.reduce(
+      (currentRules, option) => upsertBlockedTimeRule(currentRules, {
+        day: option.value,
+        startTime,
+        endTime,
+      }),
+      rules,
+    )
+
+    updateRules(nextRules)
+  }
+
   const handleRemoveRule = (rule: BlockedTimeRule) => {
     updateRules(removeBlockedTimeRule(rules, rule))
   }
 
+  const updateGridCell = (nextCells: Set<string>) => {
+    updateRules(blockedCellsToRules(nextCells))
+  }
+
+  const applyCellIntent = (cellKey: string, intent: CellIntent) => {
+    if (touchedDuringDrag.current.has(cellKey)) return
+    touchedDuringDrag.current.add(cellKey)
+
+    const nextCells = dragCells.current ?? new Set(blockedCells)
+    if (intent === 'block') {
+      nextCells.add(cellKey)
+    } else {
+      nextCells.delete(cellKey)
+    }
+
+    dragCells.current = nextCells
+    updateGridCell(nextCells)
+  }
+
+  const handleCellPointerDown = (cellKey: string, isBlocked: boolean) => {
+    const intent: CellIntent = isBlocked ? 'unblock' : 'block'
+    dragIntent.current = intent
+    dragCells.current = new Set(blockedCells)
+    touchedDuringDrag.current = new Set()
+    applyCellIntent(cellKey, intent)
+  }
+
+  const handleCellPointerEnter = (cellKey: string) => {
+    if (!dragIntent.current) return
+    applyCellIntent(cellKey, dragIntent.current)
+  }
+
+  const stopDrag = () => {
+    dragIntent.current = null
+    dragCells.current = null
+    touchedDuringDrag.current = new Set()
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" onPointerUp={stopDrag} onPointerCancel={stopDrag} onPointerLeave={stopDrag}>
       <Card className="border-border/60 bg-muted/20 shadow-none">
         <CardHeader>
           <CardTitle className="text-base">Blocked Scheduling Windows</CardTitle>
           <CardDescription>
-            These are hard constraints. The scheduler and chatbot will avoid proposing these windows for the selected activity.
+            Drag across the week to paint blocked time red. These are hard constraints, so the scheduler and chatbot
+            avoid them for the selected activity.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -137,21 +215,49 @@ export function SchedulingRulesPanel({
             </div>
           </div>
 
+          <WeeklyBlockGrid
+            blockedCells={blockedCells}
+            onCellPointerDown={handleCellPointerDown}
+            onCellPointerEnter={handleCellPointerEnter}
+          />
+
           {!isTimeRangeValid && (
             <p className="text-sm text-red-600 dark:text-red-300">End time must be later than start time.</p>
           )}
 
-          <Button onClick={handleAddRule} disabled={!isTimeRangeValid} className="w-full sm:w-auto">
-            Add blocked window
-          </Button>
+          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+            <div className="mb-4 flex flex-col gap-1">
+              <p className="text-sm font-medium">Precise add</p>
+              <p className="text-xs text-muted-foreground">
+                Use this for exact day-specific blocks or to repeat the same time window across the whole week.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button onClick={handleAddRule} disabled={!isTimeRangeValid} className="w-full sm:w-auto">
+                Add for {WEEKDAY_OPTIONS.find((option) => option.value === day)?.label}
+              </Button>
+              <Button
+                onClick={handleAddAllWeekRule}
+                disabled={!isTimeRangeValid}
+                variant="outline"
+                className="w-full sm:w-auto"
+              >
+                Block {allWeekRangeLabel} all week
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
       <div className="space-y-3">
         <div>
-          <p className="text-sm font-medium">Current rules for {activity}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">Current rules for {activity}</p>
+            <Badge variant="secondary">{rules.length}</Badge>
+          </div>
           <p className="text-xs text-muted-foreground">
-            Weekly recurring windows. Remove a rule here if you want the assistant to use that time again.
+            Weekly recurring windows. Switch activities above to inspect a different activity profile.
           </p>
         </div>
 
@@ -186,4 +292,193 @@ export function SchedulingRulesPanel({
       </div>
     </div>
   )
+}
+
+function WeeklyBlockGrid({
+  blockedCells,
+  onCellPointerDown,
+  onCellPointerEnter,
+}: {
+  blockedCells: Set<string>
+  onCellPointerDown: (cellKey: string, isBlocked: boolean) => void
+  onCellPointerEnter: (cellKey: string) => void
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-medium">Weekly block painter</p>
+          <p className="text-xs text-muted-foreground">
+            Click or drag to block. Drag red cells again to unblock.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="h-3 w-3 rounded-sm border border-red-500/60 bg-red-500/80" />
+          Blocked
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-border/60 bg-background shadow-sm">
+        <div className="grid grid-cols-[3.5rem_repeat(7,minmax(3rem,1fr))] border-b border-border/60 bg-muted/40 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="border-r border-border/60 px-2 py-2 text-left">Time</div>
+          {WEEKDAY_OPTIONS.map((option) => (
+            <div key={option.value} className="border-r border-border/60 px-2 py-2 last:border-r-0">
+              <span className="hidden sm:inline">{option.label.slice(0, 3)}</span>
+              <span className="sm:hidden">{option.label.slice(0, 1)}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="max-h-[32rem] overflow-y-auto select-none touch-none">
+          <div className="grid grid-cols-[3.5rem_repeat(7,minmax(3rem,1fr))]">
+            {GRID_SLOTS.map((slot) => (
+              <TimeSlotRow
+                key={slot.startTime}
+                slot={slot}
+                blockedCells={blockedCells}
+                onCellPointerDown={onCellPointerDown}
+                onCellPointerEnter={onCellPointerEnter}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TimeSlotRow({
+  slot,
+  blockedCells,
+  onCellPointerDown,
+  onCellPointerEnter,
+}: {
+  slot: (typeof GRID_SLOTS)[number]
+  blockedCells: Set<string>
+  onCellPointerDown: (cellKey: string, isBlocked: boolean) => void
+  onCellPointerEnter: (cellKey: string) => void
+}) {
+  const isHour = slot.startTime.endsWith(':00')
+
+  return (
+    <>
+      <div
+        className={cn(
+          'border-r border-border/60 px-2 text-[11px] tabular-nums text-muted-foreground',
+          isHour ? 'border-t border-border/60 pt-1.5' : 'border-t border-border/30',
+        )}
+      >
+        {slot.label}
+      </div>
+      {WEEKDAY_OPTIONS.map((dayOption) => {
+        const cellKey = buildCellKey(dayOption.value, slot.index)
+        const isBlocked = blockedCells.has(cellKey)
+
+        return (
+          <button
+            key={cellKey}
+            type="button"
+            aria-label={`${isBlocked ? 'Unblock' : 'Block'} ${dayOption.label} ${slot.startTime} to ${slot.endTime}`}
+            aria-pressed={isBlocked}
+            className={cn(
+              'h-7 border-r border-t border-border/50 transition-colors last:border-r-0 focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              isHour ? 'border-t-border/70' : 'border-t-border/35',
+              isBlocked
+                ? 'bg-red-500/80 hover:bg-red-500 dark:bg-red-500/70 dark:hover:bg-red-500'
+                : 'bg-background hover:bg-red-500/15',
+            )}
+            onPointerDown={(event) => {
+              event.preventDefault()
+              onCellPointerDown(cellKey, isBlocked)
+            }}
+            onPointerEnter={() => onCellPointerEnter(cellKey)}
+          />
+        )
+      })}
+    </>
+  )
+}
+
+function buildCellKey(day: WeekdayKey, slotIndex: number) {
+  return `${day}:${slotIndex}`
+}
+
+function parseCellKey(cellKey: string) {
+  const [day, slotIndex] = cellKey.split(':')
+  return {
+    day: day as WeekdayKey,
+    slotIndex: Number(slotIndex),
+  }
+}
+
+function minutesToTimeString(totalMinutes: number) {
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+}
+
+function rulesToBlockedCells(rules: BlockedTimeRule[]) {
+  const cells = new Set<string>()
+  for (const rule of rules) {
+    const startSlot = Math.max(0, Math.floor((timeStringToMinutes(rule.startTime) - GRID_START_HOUR * 60) / SLOT_MINUTES))
+    const endSlot = Math.min(
+      GRID_SLOTS.length,
+      Math.ceil((timeStringToMinutes(rule.endTime) - GRID_START_HOUR * 60) / SLOT_MINUTES),
+    )
+
+    for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
+      cells.add(buildCellKey(rule.day, slotIndex))
+    }
+  }
+  return cells
+}
+
+function blockedCellsToRules(cells: Set<string>) {
+  const slotsByDay = new Map<WeekdayKey, number[]>()
+  for (const cellKey of cells) {
+    const { day, slotIndex } = parseCellKey(cellKey)
+    slotsByDay.set(day, [...(slotsByDay.get(day) ?? []), slotIndex])
+  }
+
+  const rules: BlockedTimeRule[] = []
+  for (const { value: day } of WEEKDAY_OPTIONS) {
+    const slots = [...(slotsByDay.get(day) ?? [])].sort((a, b) => a - b)
+    let runStart: number | null = null
+    let previousSlot: number | null = null
+
+    for (const slotIndex of slots) {
+      if (runStart === null) {
+        runStart = slotIndex
+        previousSlot = slotIndex
+        continue
+      }
+
+      if (previousSlot !== null && slotIndex === previousSlot + 1) {
+        previousSlot = slotIndex
+        continue
+      }
+
+      rules.push(buildRuleFromSlots(day, runStart, previousSlot ?? runStart))
+      runStart = slotIndex
+      previousSlot = slotIndex
+    }
+
+    if (runStart !== null) {
+      rules.push(buildRuleFromSlots(day, runStart, previousSlot ?? runStart))
+    }
+  }
+
+  return sortRules(rules)
+}
+
+function buildRuleFromSlots(day: WeekdayKey, startSlot: number, endSlot: number): BlockedTimeRule {
+  const startMinutes = GRID_START_HOUR * 60 + startSlot * SLOT_MINUTES
+  const endMinutes = GRID_START_HOUR * 60 + (endSlot + 1) * SLOT_MINUTES
+
+  return {
+    id: `${day}-${minutesToTimeString(startMinutes)}-${minutesToTimeString(endMinutes)}`,
+    day,
+    startTime: minutesToTimeString(startMinutes),
+    endTime: minutesToTimeString(endMinutes),
+  }
 }

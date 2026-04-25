@@ -1,4 +1,4 @@
-import type { AssistantRequest, AssistantResponse, PendingCalendarOperation } from '@/lib/types'
+import type { AssistantRequest, AssistantResponse, CompareRecommendation, PendingCalendarOperation } from '@/lib/types'
 import { formatBlockedTimeRule, getActivityProfile } from '@/lib/preferences'
 import { buildAssistantTools } from './tools'
 import { getLLMProvider, type LLMContent } from './provider'
@@ -83,9 +83,21 @@ function buildPreferencesSummary(request: AssistantRequest) {
   return lines.join('\n')
 }
 
+function buildCompareModeInstruction() {
+  return [
+    'COMPARE MODE: Your job is to understand the user’s activity request and recommend the best weather windows for comparison cards.',
+    'For recommendation requests, call find_optimal_slots and include requested_activity_label when the user names an activity.',
+    'Map general activities to the closest scored activity: outdoor exercise, tennis, hiking, cycling, walking, or workouts -> run; outdoor meals, drinks, dates, picnics, markets, parks, or social plans -> social; photography, video, sightseeing, sunrise, or sunset -> photo; flights, airport, aviation, or travel weather risk -> flight; study, reading, focus, writing, or laptop work -> study.',
+    'When duration is not specified, use sensible defaults: run/exercise 45 minutes, photo 60 minutes, social 120 minutes, study 90 minutes, flight 30 minutes.',
+    'If you map a user activity to a scored profile, briefly explain the mapping in natural language.',
+    'Prefer returning 3 options unless the user asks for fewer. Mention the top option and the weather reason behind it.',
+    'Do not draft a calendar event in compare mode unless the user explicitly asks you to add or schedule something. The UI lets the user choose a card.',
+  ].join('\n')
+}
+
 function buildSystemInstruction(request: AssistantRequest) {
   const latestUserMessageHints = getLatestUserMessageHints(request.messages)
-  return [
+  const schedulerInstruction = [
     'You are the Weather Arbitrage Engine quick-scheduling assistant.',
     'Your primary job is to help the user schedule outdoor activities quickly and conversationally.',
     'When the user says "I want to do X at Y time", your goal is to confirm the details and add it to their calendar.',
@@ -104,6 +116,28 @@ function buildSystemInstruction(request: AssistantRequest) {
     'If the user asks about settings or wants to change them, use the account settings tools instead of describing imaginary settings.',
     'Preference changes apply immediately and are not confirmation-gated like calendar drafts.',
     'Keep replies concise, helpful, and in plain text.',
+    buildExactTimeGuidance(latestUserMessageHints),
+    buildPreferencesSummary(request),
+    `Current city: ${request.city}.`,
+    `Current time: ${request.now}.`,
+    `User timezone: ${request.timezone}.`,
+    buildPendingSummary(request.pendingOperations),
+  ].join('\n')
+
+  if (request.mode !== 'compare') {
+    return schedulerInstruction
+  }
+
+  return [
+    'You are the Weather Arbitrage Engine compare-tab assistant.',
+    'Your primary job is to feel like a smart chatbot for weather-aware activity planning.',
+    'Use the provided tools for any weather reasoning, scoring, calendar lookup, or settings inspection.',
+    'Never invent event ids, event times, scores, or weather details.',
+    'Always use the user timezone when referencing times.',
+    'Default to conflict-free recommendations and respect blocked scheduling windows.',
+    'Weather comfort settings must influence any recommended time blocks.',
+    'Keep replies concise, helpful, and in plain text.',
+    buildCompareModeInstruction(),
     buildExactTimeGuidance(latestUserMessageHints),
     buildPreferencesSummary(request),
     `Current city: ${request.city}.`,
@@ -136,6 +170,7 @@ export async function runAssistant(request: AssistantRequest): Promise<Assistant
   const contents = toLLMContents(request.messages)
   const referencedEventIds = new Set<string>()
   const pendingOperations: PendingCalendarOperation[] = []
+  let compareRecommendation: CompareRecommendation | null = null
 
   for (let step = 0; step < 6; step++) {
     const response = await provider.generate({
@@ -151,6 +186,7 @@ export async function runAssistant(request: AssistantRequest): Promise<Assistant
         requiresConfirmation: pendingOperations.length > 0,
         referencedEventIds: [...referencedEventIds],
         updatedPreferences: tools.hasPreferenceUpdates() ? tools.getCurrentPreferences() : null,
+        compareRecommendation,
       }
     }
 
@@ -158,6 +194,50 @@ export async function runAssistant(request: AssistantRequest): Promise<Assistant
 
     for (const functionCall of response.functionCalls) {
       const result = tools.execute(functionCall.name, functionCall.args)
+      if (request.mode === 'compare' && functionCall.name === 'find_optimal_slots') {
+        const toolResponse = result.response as {
+          requestedActivityLabel?: unknown
+          scoredActivity?: unknown
+          slots?: unknown
+        }
+        const scoredActivity =
+          typeof toolResponse.scoredActivity === 'string' &&
+          ['run', 'study', 'social', 'flight', 'photo'].includes(toolResponse.scoredActivity)
+            ? (toolResponse.scoredActivity as CompareRecommendation['scoredActivity'])
+            : null
+        const slots = Array.isArray(toolResponse.slots) ? toolResponse.slots : []
+        compareRecommendation = {
+          requestedActivityLabel:
+            typeof toolResponse.requestedActivityLabel === 'string' ? toolResponse.requestedActivityLabel : null,
+          scoredActivity,
+          slots: slots
+            .map((slot) => {
+              if (!slot || typeof slot !== 'object') return null
+              const item = slot as Record<string, unknown>
+              if (
+                !Array.isArray(item.windowIds) ||
+                typeof item.startTime !== 'string' ||
+                typeof item.endTime !== 'string' ||
+                typeof item.score !== 'number' ||
+                typeof item.location !== 'string' ||
+                typeof item.weatherSummary !== 'string'
+              ) {
+                return null
+              }
+
+              return {
+                windowIds: item.windowIds.filter((id): id is string => typeof id === 'string'),
+                startTime: item.startTime,
+                endTime: item.endTime,
+                score: item.score,
+                location: item.location,
+                weatherSummary: item.weatherSummary,
+                ...(typeof item.displayTime === 'string' ? { displayTime: item.displayTime } : {}),
+              }
+            })
+            .filter((slot): slot is NonNullable<typeof slot> => !!slot),
+        }
+      }
       if (result.pendingOperation) {
         pendingOperations.push(result.pendingOperation)
       }
@@ -182,5 +262,6 @@ export async function runAssistant(request: AssistantRequest): Promise<Assistant
     requiresConfirmation: pendingOperations.length > 0,
     referencedEventIds: [...referencedEventIds],
     updatedPreferences: tools.hasPreferenceUpdates() ? tools.getCurrentPreferences() : null,
+    compareRecommendation,
   }
 }

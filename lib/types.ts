@@ -165,6 +165,24 @@ export interface AssistantChatMessage {
   content: string;
 }
 
+export type AssistantMode = 'scheduler' | 'compare';
+
+export interface CompareRecommendationSlot {
+  windowIds: string[];
+  startTime: string;
+  endTime: string;
+  score: number;
+  location: string;
+  weatherSummary: string;
+  displayTime?: string;
+}
+
+export interface CompareRecommendation {
+  requestedActivityLabel: string | null;
+  scoredActivity: Exclude<Activity, 'custom'> | null;
+  slots: CompareRecommendationSlot[];
+}
+
 export interface AssistantRequest {
   messages: AssistantChatMessage[];
   events: CalendarEvent[];
@@ -173,6 +191,7 @@ export interface AssistantRequest {
   preferences: UserPreferences;
   now: string;
   timezone: string;
+  mode?: AssistantMode;
   pendingOperations?: PendingCalendarOperation[] | null;
 }
 
@@ -182,6 +201,7 @@ export interface AssistantResponse {
   requiresConfirmation: boolean;
   referencedEventIds?: string[];
   updatedPreferences?: UserPreferences | null;
+  compareRecommendation?: CompareRecommendation | null;
 }
 
 export interface ChatMessage {

@@ -1,287 +1,354 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Sparkles, CalendarCheck, ArrowRight } from 'lucide-react'
-import { addDays, isSameDay } from 'date-fns'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ArrowRight, CalendarCheck, Send, Sparkles } from 'lucide-react'
 import { Navbar } from '@/components/navbar'
 import { ComparisonCard } from '@/components/comparison-card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { useWeatherData } from '@/hooks/use-weather-data'
+import { CalendarStoreProvider, useCalendarStore } from '@/hooks/use-calendar-store'
 import { usePreferences } from '@/hooks/use-preferences'
+import { useWeatherData } from '@/hooks/use-weather-data'
 import { applyPreferenceScoresToWindows } from '@/lib/scoring'
-import type { Activity, CalendarEvent, TimeWindow } from '@/lib/types'
+import type {
+  Activity,
+  AssistantRequest,
+  AssistantResponse,
+  CalendarEvent,
+  ChatMessage,
+  CompareRecommendation,
+  PendingCalendarOperation,
+  TimeWindow,
+} from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-// ─── activity helpers ────────────────────────────────────────────────────────
-
-type ChatActivity = Activity
+type ScoredActivity = Exclude<Activity, 'custom'>
 
 interface ActivityMeta {
   label: string
   color: CalendarEvent['color']
-  duration: number // minutes
   defaultTitle: string
 }
 
-const ACTIVITY_META: Record<ChatActivity, ActivityMeta> = {
-  run:    { label: 'Run',          color: 'green',  duration: 45,  defaultTitle: 'Morning Run' },
-  photo:  { label: 'Photo walk',   color: 'violet', duration: 60,  defaultTitle: 'Photo Walk' },
-  social: { label: 'Social outing',color: 'amber',  duration: 120, defaultTitle: 'Drinks / Dinner' },
-  study:  { label: 'Study session',color: 'blue',   duration: 90,  defaultTitle: 'Study Session' },
-  flight: { label: 'Flight',       color: 'blue',   duration: 30,  defaultTitle: 'Flight' },
-  custom: { label: 'Activity',     color: 'blue',   duration: 60,  defaultTitle: 'Outdoor Activity' },
-}
-
-function parseActivity(text: string): ChatActivity | null {
-  const t = text.toLowerCase()
-  if (/\b(run|jog|running|jogging|sprint)\b/.test(t)) return 'run'
-  if (/\b(bike|cycling|cycle|hike|hiking|walk|walking|yoga|exercise|workout|gym)\b/.test(t)) return 'run'
-  if (/\b(photo|photography|camera|shoot|shooting|golden hour|sunset photo)\b/.test(t)) return 'photo'
-  if (/\b(drink|drinks|beer|wine|dinner|brunch|lunch|friends|social|picnic|bbq|terrace|bar|cafe|coffee|outing|hangout)\b/.test(t)) return 'social'
-  if (/\b(study|work|focus|read|homework|revision|writing)\b/.test(t)) return 'study'
-  if (/\b(flight|fly|airport|travel|plane|flying)\b/.test(t)) return 'flight'
-  return null
-}
-
-interface DayChoice {
-  label: string
-  offset: number | 'best'
-}
-
-function parseDay(text: string): DayChoice | null {
-  const t = text.toLowerCase()
-  if (/\btoday\b/.test(t)) return { label: 'today', offset: 0 }
-  if (/\btomorrow\b/.test(t)) return { label: 'tomorrow', offset: 1 }
-  if (/\bmonday\b/.test(t)) return { label: 'Monday', offset: daysUntil(1) }
-  if (/\btuesday\b/.test(t)) return { label: 'Tuesday', offset: daysUntil(2) }
-  if (/\bwednesday\b/.test(t)) return { label: 'Wednesday', offset: daysUntil(3) }
-  if (/\bthursday\b/.test(t)) return { label: 'Thursday', offset: daysUntil(4) }
-  if (/\bfriday\b/.test(t)) return { label: 'Friday', offset: daysUntil(5) }
-  if (/\bsaturday\b/.test(t)) return { label: 'Saturday', offset: daysUntil(6) }
-  if (/\bsunday\b/.test(t)) return { label: 'Sunday', offset: daysUntil(0) }
-  if (/\b(any|best|whenever|anytime|this week|week)\b/.test(t)) return { label: 'this week', offset: 'best' }
-  return null
-}
-
-function daysUntil(targetDow: number): number {
-  const today = new Date().getDay()
-  const diff = (targetDow - today + 7) % 7
-  return diff === 0 ? 7 : diff
-}
-
-// ─── window helpers ──────────────────────────────────────────────────────────
-
-function getTopWindowsForDay(
-  windows: TimeWindow[],
-  activity: ChatActivity,
-  dayOffset: number,
-  count = 3,
-): TimeWindow[] {
-  const target = addDays(new Date(), dayOffset)
-  return windows
-    .filter((w) => {
-      const d = new Date(w.date)
-      return isSameDay(d, target)
-    })
-    .filter((w) => {
-      const [h] = w.startTime.split(':').map(Number)
-      return h >= 6 && h < 22
-    })
-    .sort((a, b) => b.scores[activity] - a.scores[activity])
-    .slice(0, count)
-}
-
-function getTopWindowsAny(
-  windows: TimeWindow[],
-  activity: ChatActivity,
-  count = 3,
-): TimeWindow[] {
-  const now = new Date()
-  return windows
-    .filter((w) => {
-      const d = new Date(w.date)
-      return d >= now
-    })
-    .filter((w) => {
-      const [h] = w.startTime.split(':').map(Number)
-      return h >= 6 && h < 22
-    })
-    .sort((a, b) => b.scores[activity] - a.scores[activity])
-    .slice(0, count)
-}
-
-function windowToEvent(
-  win: TimeWindow,
-  activity: ChatActivity,
-  eventId: string,
-): CalendarEvent {
-  const meta = ACTIVITY_META[activity]
-  const dateObj = new Date(win.date)
-  const [startH, startM] = win.startTime.split(':').map(Number)
-  const start = new Date(dateObj)
-  start.setHours(startH, startM, 0, 0)
-  const end = new Date(start.getTime() + meta.duration * 60_000)
-
-  return {
-    id: eventId,
-    title: meta.defaultTitle,
-    startTime: start.toISOString(),
-    endTime: end.toISOString(),
-    category: 'weather-sensitive',
-    activity,
-    color: meta.color,
-    location: win.location,
-    weatherScore: win.scores[activity],
-    createdVia: 'compare',
-  }
-}
-
-// ─── chat types ──────────────────────────────────────────────────────────────
-
-type ChatStep = 'greeting' | 'ask_activity' | 'ask_day' | 'show_results' | 'scheduled'
-
-interface ChatMsg {
-  role: 'bot' | 'user'
-  text: string
+const ACTIVITY_META: Record<Activity, ActivityMeta> = {
+  run: { label: 'Run / Workout', color: 'green', defaultTitle: 'Outdoor Workout' },
+  photo: { label: 'Photo walk', color: 'violet', defaultTitle: 'Photo Walk' },
+  social: { label: 'Social outing', color: 'amber', defaultTitle: 'Outdoor Plan' },
+  study: { label: 'Study session', color: 'blue', defaultTitle: 'Study Session' },
+  flight: { label: 'Flight', color: 'blue', defaultTitle: 'Flight' },
+  custom: { label: 'Activity', color: 'blue', defaultTitle: 'Outdoor Activity' },
 }
 
 const CARD_VARIANTS: Array<'best' | 'usual' | 'alternate'> = ['best', 'usual', 'alternate']
 const CARD_LABELS = ['Top Pick', 'Runner-Up', 'Alternative']
 
-// ─── component ───────────────────────────────────────────────────────────────
+const suggestedPrompts = [
+  'Best time for tennis tomorrow afternoon',
+  'Outdoor dinner with friends Friday evening',
+  'Is noon tomorrow good for a run?',
+  'Best photo walk this week',
+]
 
-export default function ComparePage() {
+function createMessage(
+  role: ChatMessage['role'],
+  content: string,
+  extras: Partial<ChatMessage> = {},
+): ChatMessage {
+  return {
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+    role,
+    content,
+    timestamp: new Date(),
+    ...extras,
+  }
+}
+
+function isConfirmationText(value: string) {
+  const lower = value.trim().toLowerCase()
+  return lower === 'yes' || lower.includes('confirm') || lower.includes('apply') || lower.includes('do it') || lower.includes('yes,')
+}
+
+function isCancelText(value: string) {
+  const lower = value.trim().toLowerCase()
+  return lower === 'no' || lower.includes('cancel') || lower.includes("don't") || lower.includes('do not')
+}
+
+function stripPendingDecorators(messages: ChatMessage[]) {
+  return messages.map((message) =>
+    message.pendingOperations || message.requiresConfirmation
+      ? {
+          ...message,
+          pendingOperations: null,
+          requiresConfirmation: false,
+        }
+      : message,
+  )
+}
+
+function getWindowStart(window: TimeWindow): Date {
+  const date = new Date(window.date)
+  const [hour, minute] = window.startTime.split(':').map(Number)
+  date.setHours(hour, minute, 0, 0)
+  return date
+}
+
+function getWindowEnd(window: TimeWindow): Date {
+  const date = new Date(window.date)
+  const [hour, minute] = window.endTime.split(':').map(Number)
+  date.setHours(hour, minute, 0, 0)
+  return date
+}
+
+function recommendationToWindows(recommendation: CompareRecommendation | null, windows: TimeWindow[]) {
+  if (!recommendation?.slots.length) return []
+  const byId = new Map(windows.map((window) => [window.id, window]))
+
+  return recommendation.slots
+    .map((slot) => slot.windowIds.map((id) => byId.get(id)).find((window): window is TimeWindow => !!window))
+    .filter((window): window is TimeWindow => !!window)
+}
+
+function buildEventFromWindow(
+  window: TimeWindow,
+  activity: ScoredActivity,
+  recommendation: CompareRecommendation | null,
+  eventId: string,
+): CalendarEvent {
+  const meta = ACTIVITY_META[activity]
+  const slot = recommendation?.slots.find((candidate) => candidate.windowIds.includes(window.id))
+  const start = slot?.startTime ? new Date(slot.startTime) : getWindowStart(window)
+  const end = slot?.endTime ? new Date(slot.endTime) : getWindowEnd(window)
+  const label = recommendation?.requestedActivityLabel?.trim()
+
+  return {
+    id: eventId,
+    title: label ? label[0].toUpperCase() + label.slice(1) : meta.defaultTitle,
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+    category: activity === 'study' ? 'indoor' : 'weather-sensitive',
+    activity,
+    color: meta.color,
+    location: window.location,
+    weatherScore: slot?.score ?? window.scores[activity],
+    createdVia: 'compare',
+    suggestedAlternative: null,
+  }
+}
+
+function CompareContent() {
   const router = useRouter()
-  const [preferences] = usePreferences()
+  const { state, dispatch } = useCalendarStore()
+  const [preferences, setPreferences] = usePreferences()
   const { windows: rawWindows } = useWeatherData(preferences.city)
   const windows = useMemo(
     () => applyPreferenceScoresToWindows(rawWindows, preferences),
     [rawWindows, preferences],
   )
 
-  // chat state
-  const [step, setStep] = useState<ChatStep>('greeting')
-  const [messages, setMessages] = useState<ChatMsg[]>([
-    {
-      role: 'bot',
-      text: `Hi! I'll help you find the best weather window for your activity. What would you like to do? (e.g. go for a run, photo walk, drinks with friends)`,
-    },
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    createMessage(
+      'assistant',
+      `Tell me what you want to do, and I’ll compare the best weather windows for it. You can be specific, like “tennis tomorrow afternoon” or “outdoor dinner Friday evening.”`,
+    ),
   ])
   const [input, setInput] = useState('')
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // selected state
-  const [activity, setActivity] = useState<ChatActivity | null>(null)
-  const [dayChoice, setDayChoice] = useState<DayChoice | null>(null)
-  const [topWindows, setTopWindows] = useState<TimeWindow[]>([])
+  const [isTyping, setIsTyping] = useState(false)
+  const [pendingOperations, setPendingOperations] = useState<PendingCalendarOperation[] | null>(null)
+  const [recommendation, setRecommendation] = useState<CompareRecommendation | null>(null)
   const [scheduledEventId, setScheduledEventId] = useState<string | null>(null)
   const [isScheduling, setIsScheduling] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [messages])
+  }, [messages, isTyping])
 
-  function addMsg(role: ChatMsg['role'], text: string) {
-    setMessages((prev) => [...prev, { role, text }])
+  const topWindows = useMemo(() => recommendationToWindows(recommendation, windows), [recommendation, windows])
+  const scoredActivity = recommendation?.scoredActivity
+
+  const applyPendingOperations = (operations: PendingCalendarOperation[]) => {
+    for (const operation of operations) {
+      if (operation.type === 'create_event') {
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            ...operation.eventDraft,
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+          },
+        })
+        continue
+      }
+
+      if (operation.type === 'update_event') {
+        const existingEvent = state.events.find((event) => event.id === operation.eventId)
+        if (!existingEvent) continue
+        dispatch({
+          type: 'UPDATE_EVENT',
+          event: {
+            ...existingEvent,
+            ...operation.changes,
+          },
+        })
+        continue
+      }
+
+      dispatch({ type: 'DELETE_EVENT', id: operation.eventId })
+    }
   }
 
-  function handleSend() {
-    const val = input.trim()
-    if (!val) return
+  const sendToAssistant = async (nextMessages: ChatMessage[], activePendingOperations: PendingCalendarOperation[] | null) => {
+    setIsTyping(true)
+
+    try {
+      const request: AssistantRequest = {
+        mode: 'compare',
+        messages: nextMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        events: state.events,
+        windows,
+        city: preferences.city,
+        preferences,
+        now: new Date().toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        pendingOperations: activePendingOperations,
+      }
+
+      const response = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      })
+
+      const data = (await response.json()) as AssistantResponse | { error?: string }
+      if (!response.ok || !('message' in data)) {
+        throw new Error(('error' in data && data.error) || 'The assistant request failed.')
+      }
+
+      const assistantMessage = createMessage('assistant', data.message, {
+        pendingOperations: data.pendingOperations,
+        requiresConfirmation: data.requiresConfirmation,
+        referencedEventIds: data.referencedEventIds,
+      })
+
+      if (data.updatedPreferences) {
+        setPreferences(data.updatedPreferences)
+      }
+
+      setMessages((prev) => [...prev, assistantMessage])
+      setPendingOperations(data.pendingOperations)
+      if (data.compareRecommendation) {
+        setRecommendation(data.compareRecommendation)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The assistant request failed.'
+      setMessages((prev) => [...prev, createMessage('assistant', message, { isError: true })])
+    } finally {
+      setIsTyping(false)
+    }
+  }
+
+  const finalizePending = (action: 'confirm' | 'cancel', originalInput?: string) => {
+    if (!pendingOperations || pendingOperations.length === 0) return
+
+    const userMessage = createMessage('user', originalInput || (action === 'confirm' ? 'Yes, apply it' : 'Cancel that'))
+
+    if (action === 'confirm') {
+      applyPendingOperations(pendingOperations)
+      setMessages((prev) => [
+        ...stripPendingDecorators(prev),
+        userMessage,
+        createMessage('assistant', 'Done. I applied that change to your calendar.'),
+      ])
+    } else {
+      setMessages((prev) => [
+        ...stripPendingDecorators(prev),
+        userMessage,
+        createMessage('assistant', 'Okay, I won’t make any calendar changes.'),
+      ])
+    }
+
+    setPendingOperations(null)
     setInput('')
-    addMsg('user', val)
-
-    if (step === 'greeting' || step === 'ask_activity') {
-      const parsed = parseActivity(val)
-      if (!parsed) {
-        addMsg('bot', `I didn't catch the activity. Could you tell me what you'd like to do — for example a run, photo walk, or dinner with friends?`)
-        setStep('ask_activity')
-        return
-      }
-      setActivity(parsed)
-      const meta = ACTIVITY_META[parsed]
-      addMsg('bot', `Great — a ${meta.label}! When are you thinking — today, tomorrow, or another day this week?`)
-      setStep('ask_day')
-      return
-    }
-
-    if (step === 'ask_day') {
-      const parsed = parseDay(val)
-      if (!parsed) {
-        addMsg('bot', `I didn't catch the day. Try "today", "tomorrow", "Friday", or "any day this week".`)
-        return
-      }
-      setDayChoice(parsed)
-
-      const act = activity!
-      const results =
-        parsed.offset === 'best'
-          ? getTopWindowsAny(windows, act, 3)
-          : getTopWindowsForDay(windows, act, parsed.offset as number, 3)
-
-      setTopWindows(results)
-
-      if (results.length === 0) {
-        addMsg('bot', `I couldn't find any good slots for ${parsed.label}. Try a different day?`)
-        return
-      }
-
-      const meta = ACTIVITY_META[act]
-      addMsg(
-        'bot',
-        `Here are the top ${results.length} slots for your ${meta.label} on ${parsed.label}. Pick the one that works best — it'll be added straight to your calendar!`,
-      )
-      setStep('show_results')
-      return
-    }
   }
 
-  async function handleSelectSlot(win: TimeWindow) {
-    if (!activity || isScheduling) return
+  const handleSend = async () => {
+    if (!input.trim() || isTyping) return
+
+    if (pendingOperations && pendingOperations.length > 0) {
+      if (isConfirmationText(input)) {
+        finalizePending('confirm', input)
+        return
+      }
+
+      if (isCancelText(input)) {
+        finalizePending('cancel', input)
+        return
+      }
+    }
+
+    const userMessage = createMessage('user', input)
+    const nextMessages = [...messages, userMessage]
+    setMessages(nextMessages)
+    setInput('')
+    setScheduledEventId(null)
+    await sendToAssistant(nextMessages, pendingOperations)
+  }
+
+  const handlePromptClick = (prompt: string) => {
+    setInput(prompt)
+    inputRef.current?.focus()
+  }
+
+  const handleSelectSlot = (window: TimeWindow) => {
+    if (!scoredActivity || isScheduling) return
     setIsScheduling(true)
 
     const eventId =
       typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : Date.now().toString()
+    const event = buildEventFromWindow(window, scoredActivity, recommendation, eventId)
 
-    const event = windowToEvent(win, activity, eventId)
-
-    try {
-      await fetch('/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(event),
-      })
-    } catch {
-      // best-effort — user will still be navigated to the calendar
-    }
-
-    const meta = ACTIVITY_META[activity]
-    addMsg(
-      'bot',
-      `Done! Your ${meta.label} on ${win.day} at ${win.startTime} has been added to the calendar. Head over to see it highlighted.`,
-    )
+    dispatch({ type: 'ADD_EVENT', event })
+    setMessages((prev) => [
+      ...prev,
+      createMessage(
+        'assistant',
+        `Added "${event.title}" to your calendar for ${new Intl.DateTimeFormat('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        }).format(new Date(event.startTime))}.`,
+      ),
+    ])
     setScheduledEventId(eventId)
-    setStep('scheduled')
     setIsScheduling(false)
   }
 
-  function handleGoToCalendar() {
+  const handleGoToCalendar = () => {
     if (scheduledEventId) {
-      try { sessionStorage.setItem('highlightEventId', scheduledEventId) } catch {}
+      try {
+        sessionStorage.setItem('highlightEventId', scheduledEventId)
+      } catch {}
     }
     router.push('/scheduler')
   }
 
-  const showCards = step === 'show_results' || step === 'scheduled'
+  const hasActivePendingOperations = (message: ChatMessage) =>
+    !!pendingOperations &&
+    !!message.pendingOperations &&
+    message.pendingOperations.length > 0 &&
+    message.pendingOperations === pendingOperations
 
   return (
     <div className="min-h-screen bg-background">
@@ -289,8 +356,6 @@ export default function ComparePage() {
 
       <main className="pt-24 pb-16 px-4">
         <div className="mx-auto max-w-5xl space-y-8">
-
-          {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -298,17 +363,15 @@ export default function ComparePage() {
           >
             <h1 className="text-3xl sm:text-4xl font-bold mb-2">Find Your Optimal Time</h1>
             <p className="text-muted-foreground max-w-xl mx-auto">
-              Tell me what you want to do and I'll show you the best weather windows to choose from.
+              Ask naturally. I’ll interpret the activity, check your calendar and preferences, then compare the strongest weather windows.
             </p>
           </motion.div>
 
-          {/* Chat panel */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm shadow-sm overflow-hidden"
           >
-            {/* Chat header */}
             <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50 bg-card/80">
               <div className="relative flex-shrink-0">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-amber-500">
@@ -321,95 +384,142 @@ export default function ComparePage() {
                 />
               </div>
               <div>
-                <p className="text-sm font-semibold">Weather Window Finder</p>
-                <p className="text-xs text-muted-foreground">Powered by real-time weather scoring</p>
+                <p className="text-sm font-semibold">Weather Planning Assistant</p>
+                <p className="text-xs text-muted-foreground">LLM-powered activity matching and weather scoring</p>
               </div>
             </div>
 
-            {/* Messages */}
-            <div
-              ref={scrollRef}
-              className="flex flex-col gap-3 px-4 py-4 max-h-52 overflow-y-auto"
-            >
+            <div ref={scrollRef} className="flex max-h-72 flex-col gap-3 overflow-y-auto px-4 py-4">
               <AnimatePresence initial={false}>
-                {messages.map((msg, i) => (
+                {messages.map((message) => (
                   <motion.div
-                    key={i}
+                    key={message.id}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
+                    className={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}
                   >
                     <div
                       className={cn(
-                        'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
-                        msg.role === 'user'
+                        'max-w-[84%] rounded-2xl px-4 py-2.5 text-sm',
+                        message.role === 'user'
                           ? 'bg-foreground text-background rounded-br-md'
-                          : 'bg-muted rounded-bl-md',
+                          : message.isError
+                            ? 'bg-red-500/10 text-red-700 dark:text-red-300 rounded-bl-md'
+                            : 'bg-muted rounded-bl-md',
                       )}
                     >
-                      {msg.text}
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+
+                      {message.pendingOperations && message.pendingOperations.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {message.pendingOperations.map((operation, index) => (
+                            <div key={`${message.id}-${index}`} className="rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+                              <p className="text-xs font-medium">{operation.summary}</p>
+                            </div>
+                          ))}
+
+                          {hasActivePendingOperations(message) && (
+                            <div className="flex gap-2 pt-1">
+                              <Button size="sm" onClick={() => finalizePending('confirm')}>
+                                Confirm
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => finalizePending('cancel')}>
+                                Cancel
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ))}
               </AnimatePresence>
+
+              {isTyping && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
+                  <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
+                    <div className="flex gap-1">
+                      {[0, 0.1, 0.2].map((delay) => (
+                        <motion.div
+                          key={delay}
+                          className="w-2 h-2 bg-muted-foreground/50 rounded-full"
+                          animate={{ y: [0, -5, 0] }}
+                          transition={{ duration: 0.5, repeat: Infinity, delay }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
             </div>
 
-            {/* Input / Go to calendar */}
+            {!messages.some((message) => message.role === 'user') && (
+              <div className="flex flex-wrap gap-2 px-4 pb-2">
+                {suggestedPrompts.map((prompt) => (
+                  <Badge
+                    key={prompt}
+                    variant="outline"
+                    className="cursor-pointer px-3 py-1 transition-colors hover:bg-muted"
+                    onClick={() => handlePromptClick(prompt)}
+                  >
+                    {prompt}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
             <div className="px-4 py-3 border-t border-border/50 bg-card/40">
-              {step === 'scheduled' ? (
-                <Button
-                  onClick={handleGoToCalendar}
-                  className="w-full gap-2"
-                  size="lg"
-                >
+              {scheduledEventId ? (
+                <Button onClick={handleGoToCalendar} className="w-full gap-2" size="lg">
                   <CalendarCheck className="h-4 w-4" />
                   Go to Calendar
                   <ArrowRight className="h-4 w-4 ml-auto" />
                 </Button>
               ) : (
-                <div className="flex gap-2">
-                  <Input
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        handleSend()
-                      }
-                    }}
-                    placeholder={
-                      step === 'ask_day'
-                        ? 'Today, tomorrow, Friday…'
-                        : 'Type an activity (run, photo walk, drinks…)'
-                    }
-                    disabled={step === 'show_results'}
-                    className="flex-1"
-                    autoFocus
-                  />
-                  <Button onClick={handleSend} disabled={!input.trim() || step === 'show_results'}>
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
+                <>
+                  {pendingOperations && pendingOperations.length > 0 && (
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      A calendar change is waiting for confirmation. Reply with “yes” to apply it or “cancel” to discard it.
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      ref={inputRef}
+                      value={input}
+                      onChange={(event) => setInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          handleSend()
+                        }
+                      }}
+                      placeholder="Ask for an activity, time, weather tradeoff, or alternative..."
+                      disabled={isTyping}
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button onClick={handleSend} disabled={!input.trim() || isTyping}>
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </>
               )}
             </div>
           </motion.div>
 
-          {/* Comparison cards */}
           <AnimatePresence>
-            {showCards && topWindows.length > 0 && activity && (
+            {topWindows.length > 0 && scoredActivity && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 className="space-y-4"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <h2 className="text-lg font-semibold">
-                    Best slots for your {ACTIVITY_META[activity].label}
-                    {dayChoice && <span className="text-muted-foreground font-normal"> · {dayChoice.label}</span>}
+                    Best slots for {recommendation?.requestedActivityLabel || ACTIVITY_META[scoredActivity].label}
                   </h2>
-                  {step === 'show_results' && (
+                  {!scheduledEventId && (
                     <Badge variant="outline" className="text-xs">
                       Click a card to schedule
                     </Badge>
@@ -417,33 +527,30 @@ export default function ComparePage() {
                 </div>
 
                 <div className="grid md:grid-cols-3 gap-6">
-                  {topWindows.map((win, idx) => (
+                  {topWindows.map((window, index) => (
                     <motion.div
-                      key={win.id}
+                      key={window.id}
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.08 }}
+                      transition={{ delay: index * 0.08 }}
                       className="flex flex-col gap-3"
                     >
                       <ComparisonCard
-                        window={win}
-                        activity={activity}
-                        label={CARD_LABELS[idx] ?? `Option ${idx + 1}`}
-                        variant={CARD_VARIANTS[idx] ?? 'alternate'}
+                        window={window}
+                        activity={scoredActivity}
+                        label={CARD_LABELS[index] ?? `Option ${index + 1}`}
+                        variant={CARD_VARIANTS[index] ?? 'alternate'}
                       />
 
-                      {step === 'show_results' && (
+                      {!scheduledEventId && (
                         <Button
-                          onClick={() => handleSelectSlot(win)}
+                          onClick={() => handleSelectSlot(window)}
                           disabled={isScheduling}
-                          className={cn(
-                            'w-full gap-2',
-                            idx === 0 && 'bg-green-600 hover:bg-green-700 text-white',
-                          )}
-                          variant={idx === 0 ? 'default' : 'outline'}
+                          className={cn('w-full gap-2', index === 0 && 'bg-green-600 hover:bg-green-700 text-white')}
+                          variant={index === 0 ? 'default' : 'outline'}
                         >
                           <CalendarCheck className="h-4 w-4" />
-                          {isScheduling ? 'Scheduling…' : 'Choose This Slot'}
+                          {isScheduling ? 'Scheduling...' : 'Choose This Slot'}
                         </Button>
                       )}
                     </motion.div>
@@ -452,9 +559,16 @@ export default function ComparePage() {
               </motion.div>
             )}
           </AnimatePresence>
-
         </div>
       </main>
     </div>
+  )
+}
+
+export default function ComparePage() {
+  return (
+    <CalendarStoreProvider>
+      <CompareContent />
+    </CalendarStoreProvider>
   )
 }

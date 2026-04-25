@@ -369,6 +369,10 @@ function getToolDeclarations(): LLMToolDefinition[] {
         type: 'object',
         properties: {
           activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo'] },
+          requested_activity_label: {
+            type: 'string',
+            description: 'The user-facing activity name, especially when mapping a custom activity to a scored profile.',
+          },
           duration_minutes: { type: 'integer' },
           relative_day: { type: 'string', enum: ['today', 'tomorrow'] },
           start_date: { type: 'string', description: 'YYYY-MM-DD in the user timezone' },
@@ -664,6 +668,7 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
     score: number
     location: string
     weatherSummary: string
+    windowIds: string[]
   }> = []
   let blockedByPreferencesCount = 0
 
@@ -689,6 +694,7 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
         score,
         location: block[0].location,
         weatherSummary: summarizeWeather(block),
+        windowIds: block.map((window) => window.id),
       })
     }
   }
@@ -700,6 +706,8 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
   return {
     response: {
       count: topCandidates.length,
+      requestedActivityLabel: typeof args.requested_activity_label === 'string' ? args.requested_activity_label : null,
+      scoredActivity: args.activity,
       blockedByPreferencesCount,
       slots: topCandidates.map((candidate) => ({
         ...candidate,
