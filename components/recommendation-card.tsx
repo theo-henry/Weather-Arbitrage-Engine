@@ -34,7 +34,7 @@ export function RecommendationCard({
     run: 'Lower wind and cooler temperature maximize your pace vs your usual slot.',
     study: 'Optimal thermal comfort and natural light for deep focus.',
     social: 'Perfect temperature and low rain risk for outdoor dining.',
-    flight: 'Minimal turbulence conditions and clear skies.',
+    commute: 'Safer travel conditions with lower rain, wind, and weather disruption risk.',
     photo: 'Golden hour lighting with dramatic cloud coverage.',
     custom: 'Best overall conditions based on your preferences.',
   }

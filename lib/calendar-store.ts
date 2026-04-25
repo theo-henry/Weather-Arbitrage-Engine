@@ -1,4 +1,5 @@
 import type { CalendarEvent } from './types'
+import { normalizeCalendarEvent, normalizeCalendarEvents } from './calendar-events'
 
 export type CalendarAction =
   | { type: 'ADD_EVENT'; event: CalendarEvent }
@@ -17,13 +18,13 @@ export interface CalendarState {
 export function calendarReducer(state: CalendarState, action: CalendarAction): CalendarState {
   switch (action.type) {
     case 'ADD_EVENT':
-      return { ...state, events: [...state.events, action.event] }
+      return { ...state, events: [...state.events, normalizeCalendarEvent(action.event)] }
 
     case 'UPDATE_EVENT':
       return {
         ...state,
         events: state.events.map((e) =>
-          e.id === action.event.id ? action.event : e
+          e.id === action.event.id ? normalizeCalendarEvent(action.event) : e
         ),
       }
 
@@ -79,7 +80,7 @@ export function calendarReducer(state: CalendarState, action: CalendarAction): C
       }
 
     case 'LOAD_EVENTS':
-      return { ...state, events: action.events }
+      return { ...state, events: normalizeCalendarEvents(action.events) }
 
     default:
       return state

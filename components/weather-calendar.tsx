@@ -32,7 +32,7 @@ const activityIcons: Record<Activity, string> = {
   run: '🏃',
   study: '📚',
   social: '🥂',
-  flight: '✈️',
+  commute: '🚗',
   photo: '📸',
   custom: '⚙️',
 }

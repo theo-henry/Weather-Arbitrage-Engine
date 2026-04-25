@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { normalizeCalendarEvent } from '@/lib/calendar-events'
 import { createClient } from '@/lib/supabase/server'
 import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import type { CalendarEvent } from '@/lib/types'
@@ -22,12 +23,14 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const events: CalendarEvent[] = (data ?? []).map((row) => ({
-    ...(row.data as Omit<CalendarEvent, 'id' | 'startTime' | 'endTime'>),
-    id: row.id,
-    startTime: row.start_time,
-    endTime: row.end_time,
-  })) as CalendarEvent[]
+  const events: CalendarEvent[] = (data ?? []).map((row) =>
+    normalizeCalendarEvent({
+      ...(row.data as Omit<CalendarEvent, 'id' | 'startTime' | 'endTime'>),
+      id: row.id,
+      startTime: row.start_time,
+      endTime: row.end_time,
+    } as CalendarEvent),
+  )
 
   return NextResponse.json({ events })
 }
@@ -43,7 +46,7 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const event = (await request.json()) as CalendarEvent
+  const event = normalizeCalendarEvent((await request.json()) as CalendarEvent)
   if (!event?.id || !event.startTime || !event.endTime) {
     return NextResponse.json({ error: 'invalid event' }, { status: 400 })
   }

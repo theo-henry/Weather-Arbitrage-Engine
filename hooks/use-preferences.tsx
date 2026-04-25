@@ -12,6 +12,7 @@ type PreferencesSetter = (
 interface PreferencesContextValue {
   preferences: UserPreferences
   setPreferences: PreferencesSetter
+  ready: boolean
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null)
@@ -19,19 +20,25 @@ const PreferencesContext = createContext<PreferencesContextValue | null>(null)
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser()
   const [preferences, setPreferencesState] = useState<UserPreferences>(() => getDefaultUserPreferences())
+  const [ready, setReady] = useState(false)
   const hydrated = useRef(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (loading) return
+    if (loading) {
+      setReady(false)
+      return
+    }
 
     if (!user) {
       hydrated.current = true
       setPreferencesState(getDefaultUserPreferences())
+      setReady(true)
       return
     }
 
     hydrated.current = false
+    setReady(false)
     let cancelled = false
 
     fetch('/api/preferences')
@@ -40,11 +47,13 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         if (cancelled) return
         setPreferencesState(normalizeUserPreferences(data?.preferences))
         hydrated.current = true
+        setReady(true)
       })
       .catch(() => {
         if (cancelled) return
         setPreferencesState(getDefaultUserPreferences())
         hydrated.current = true
+        setReady(true)
       })
 
     return () => {
@@ -80,18 +89,19 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     () => ({
       preferences,
       setPreferences,
+      ready,
     }),
-    [preferences, setPreferences],
+    [preferences, setPreferences, ready],
   )
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>
 }
 
-export function usePreferences(): [UserPreferences, PreferencesSetter] {
+export function usePreferences(): [UserPreferences, PreferencesSetter, boolean] {
   const context = useContext(PreferencesContext)
   if (!context) {
     throw new Error('usePreferences must be used within PreferencesProvider')
   }
 
-  return [context.preferences, context.setPreferences]
+  return [context.preferences, context.setPreferences, context.ready]
 }

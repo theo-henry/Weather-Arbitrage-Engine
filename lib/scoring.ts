@@ -8,11 +8,11 @@ import type {
   WeatherConditions,
 } from './types'
 
-const SCORABLE_ACTIVITIES: Array<Extract<Activity, 'run' | 'study' | 'social' | 'flight' | 'photo' | 'custom'>> = [
+const SCORABLE_ACTIVITIES: Array<Extract<Activity, 'run' | 'study' | 'social' | 'commute' | 'photo' | 'custom'>> = [
   'run',
   'study',
   'social',
-  'flight',
+  'commute',
   'photo',
   'custom',
 ]
@@ -40,11 +40,28 @@ const WEIGHTS = {
     sunset: 0.15,
     atmosphere: 0.15,
   },
-  flight: {
-    turbulence: 0.4,
-    weather: 0.3,
-    stability: 0.2,
-    timing: 0.1,
+  commuteCar: {
+    rain: 0.25,
+    wind: 0.15,
+    temperature: 0.1,
+    safety: 0.3,
+    timing: 0.2,
+  },
+  commuteBike: {
+    rain: 0.3,
+    wind: 0.25,
+    temperature: 0.15,
+    safety: 0.15,
+    daylight: 0.1,
+    timing: 0.05,
+  },
+  commuteWalk: {
+    rain: 0.3,
+    wind: 0.15,
+    temperature: 0.25,
+    safety: 0.1,
+    daylight: 0.15,
+    timing: 0.05,
   },
   photo: {
     golden_hour: 0.35,
@@ -64,7 +81,7 @@ function clamp(value: number, min: number = 0, max: number = 100): number {
 }
 
 function sensitivityMultiplier(
-  sensitivity: ResolvedActivityPreferences['windSensitivity'] | ResolvedActivityPreferences['rainAvoidance'] | ResolvedActivityPreferences['turbulenceSensitivity'],
+  sensitivity: ResolvedActivityPreferences['windSensitivity'] | ResolvedActivityPreferences['rainAvoidance'],
 ): number {
   switch (sensitivity) {
     case 'low':
@@ -196,22 +213,42 @@ export function scoreSocial(
   return finalizeScore(baseScore, factors, weather, prefs.comfort)
 }
 
-// Flight scoring
-export function scoreFlight(
+// Commute scoring
+export function scoreCommute(
   weather: WeatherConditions,
   prefs: ResolvedActivityPreferences,
   hour: number,
 ): { score: number; factors: Record<string, number> } {
-  const turbSens = sensitivityMultiplier(prefs.turbulenceSensitivity ?? 'medium')
+  const mode = prefs.commuteMode ?? 'car'
+  const windMultiplier = sensitivityMultiplier(prefs.windSensitivity ?? (mode === 'car' ? 'medium' : 'high'))
+  const rainMultiplier = sensitivityMultiplier(prefs.rainAvoidance ?? (mode === 'car' ? 'medium' : 'high'))
+  const isDaylight = hour >= 7 && hour <= 20
+  const daylightPreference = (prefs.daylightPreference ?? 50) / 100
 
   const factors: Record<string, number> = {
-    turbulence: clamp(100 - weather.windSpeed * turbSens * 2.5),
-    weather: weather.condition === 'storm' ? 20 : weather.condition === 'rain' ? 50 : 100,
-    stability: clamp(100 - Math.abs(weather.cloudCover - 30) * 0.5),
-    timing: hour >= 6 && hour <= 10 ? 90 : hour >= 16 && hour <= 20 ? 85 : 70,
+    rain: clamp(100 - weather.precipitationProbability * rainMultiplier * (mode === 'car' ? 1.1 : 1.8)),
+    wind: clamp(100 - weather.windSpeed * windMultiplier * (mode === 'car' ? 1.3 : mode === 'bike' ? 2.5 : 1.8)),
+    temperature: gaussian(weather.feelsLike, mode === 'car' ? 18 : mode === 'bike' ? 16 : 20, mode === 'car' ? 14 : 8),
+    safety:
+      weather.condition === 'storm'
+        ? mode === 'car'
+          ? 35
+          : 10
+        : weather.condition === 'rain'
+          ? mode === 'car'
+            ? 65
+            : 35
+          : weather.condition === 'drizzle'
+            ? mode === 'car'
+              ? 80
+              : 55
+            : 100,
+    daylight: isDaylight ? 100 : clamp(85 - daylightPreference * 60),
+    timing: hour >= 7 && hour <= 10 ? 95 : hour >= 16 && hour <= 19 ? 90 : hour >= 6 && hour <= 22 ? 70 : 35,
   }
 
-  const weights = WEIGHTS.flight
+  const weights =
+    mode === 'bike' ? WEIGHTS.commuteBike : mode === 'walk' ? WEIGHTS.commuteWalk : WEIGHTS.commuteCar
   const baseScore = Object.entries(factors).reduce((sum, [key, value]) => {
     return sum + value * (weights[key as keyof typeof weights] ?? 0)
   }, 0)
@@ -293,8 +330,8 @@ export function scoreWindow(
       return scoreStudy(weather, prefs, hour)
     case 'social':
       return scoreSocial(weather, prefs, hour, sunsetHour)
-    case 'flight':
-      return scoreFlight(weather, prefs, hour)
+    case 'commute':
+      return scoreCommute(weather, prefs, hour)
     case 'photo':
       return scorePhoto(weather, prefs, hour, sunsetHour, sunriseHour)
     default:

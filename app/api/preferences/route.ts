@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server'
+import { applyDemoBlockedTimeRules } from '@/lib/demo-seed'
 import { getDefaultUserPreferences, normalizeUserPreferences } from '@/lib/preferences'
 import { createClient } from '@/lib/supabase/server'
 import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import type { UserPreferences } from '@/lib/types'
+
+const DEMO_EMAIL = 'demo@weatherscheduler.com'
+
+function normalizePreferencesForUser(preferences: unknown, userEmail?: string | null) {
+  const normalized = normalizeUserPreferences(preferences)
+  return userEmail === DEMO_EMAIL ? applyDemoBlockedTimeRules(normalized) : normalized
+}
 
 export async function GET() {
   if (!getSupabasePublicEnv()) {
@@ -24,7 +32,7 @@ export async function GET() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({
-    preferences: data?.data ? normalizeUserPreferences(data.data) : getDefaultUserPreferences(),
+    preferences: normalizePreferencesForUser(data?.data ?? getDefaultUserPreferences(), user.email),
   })
 }
 
@@ -44,7 +52,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'missing preferences' }, { status: 400 })
   }
 
-  const normalizedPreferences = normalizeUserPreferences(body.preferences)
+  const normalizedPreferences = normalizePreferencesForUser(body.preferences, user.email)
 
   const { error } = await supabase
     .from('user_preferences')

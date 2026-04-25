@@ -68,6 +68,8 @@ function getInsights(best: TimeWindow, usual: TimeWindow | undefined, activity: 
     insights.sensitivity = 'Enabling distraction sensitivity could improve your score by 8pts'
   } else if (activity === 'social') {
     insights.sensitivity = 'Turning off sunset bonus opens up more afternoon options'
+  } else if (activity === 'commute') {
+    insights.sensitivity = 'Switching commute mode changes how strongly rain, wind, and daylight affect the ranking'
   } else if (activity === 'photo') {
     insights.sensitivity = 'Dramatic cloud preference would favor the 19:00 slot'
   } else {

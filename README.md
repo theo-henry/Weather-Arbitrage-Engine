@@ -6,7 +6,7 @@ Instead of showing raw weather data, the app scores upcoming 30-minute time wind
 
 ## What It Does
 
-- Scores weather windows for running, studying, social plans, flights, photography, and custom preferences.
+- Scores weather windows for running, studying, social plans, commuting, photography, and custom preferences.
 - Compares the best time against the user's usual time and nearby alternatives.
 - Lets users tune personal weather sensitivity, comfort thresholds, preferred city, usual time, and blocked scheduling windows.
 - Provides a conversational scheduler that can create, update, and delete calendar events after user confirmation.
@@ -55,7 +55,7 @@ Examples of activity-specific logic:
 - **Running:** temperature, humidity, wind, rain probability, UV exposure, and time-of-day preference.
 - **Study / deep work:** thermal comfort, daylight preference, and weather distraction level.
 - **Social plans:** warmth, rain, wind, and atmosphere.
-- **Flights:** wind, storm risk, and weather stability.
+- **Commutes:** rain, wind, daylight, safety, and temperature, adjusted for car, bike, or walking.
 - **Photography:** golden hour, cloud preference, rain, visibility, and light quality.
 
 User preferences are applied on top of the base scoring model, so two users can receive different recommendations for the same forecast.

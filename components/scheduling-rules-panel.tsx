@@ -23,7 +23,7 @@ interface SchedulingRulesPanelProps {
   onPreferencesChange: (preferences: UserPreferences) => void
 }
 
-const ACTIVITIES: Activity[] = ['run', 'study', 'social', 'flight', 'photo', 'custom']
+const ACTIVITIES: Activity[] = ['run', 'study', 'social', 'commute', 'photo', 'custom']
 
 const WEEKDAY_OPTIONS: Array<{ value: WeekdayKey; label: string }> = [
   { value: 'mon', label: 'Monday' },

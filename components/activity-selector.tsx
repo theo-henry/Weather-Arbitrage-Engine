@@ -5,7 +5,7 @@ import {
   Dumbbell, 
   BookOpen, 
   Wine, 
-  Plane, 
+  Car, 
   Camera, 
   Settings 
 } from 'lucide-react'
@@ -23,7 +23,7 @@ const activities: { id: Activity; label: string; icon: typeof Dumbbell }[] = [
   { id: 'run', label: 'Run', icon: Dumbbell },
   { id: 'study', label: 'Study', icon: BookOpen },
   { id: 'social', label: 'Social', icon: Wine },
-  { id: 'flight', label: 'Flights', icon: Plane },
+  { id: 'commute', label: 'Commute', icon: Car },
   { id: 'photo', label: 'Photo', icon: Camera },
   { id: 'custom', label: 'Custom', icon: Settings },
 ]

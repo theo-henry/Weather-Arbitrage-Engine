@@ -6,7 +6,7 @@ import {
   Dumbbell, 
   BookOpen, 
   Wine, 
-  Plane, 
+  Car, 
   Camera, 
   Settings,
   ArrowRight,
@@ -28,7 +28,7 @@ const activities = [
   { id: 'run', label: 'Run / Workout', icon: Dumbbell, description: 'Optimize pace and comfort' },
   { id: 'study', label: 'Deep Work / Study', icon: BookOpen, description: 'Peak focus conditions' },
   { id: 'social', label: 'Outdoor Social', icon: Wine, description: 'Perfect terrasse weather' },
-  { id: 'flight', label: 'Flights', icon: Plane, description: 'Lowest turbulence windows' },
+  { id: 'commute', label: 'Commute', icon: Car, description: 'Safer car, bike, or walk windows' },
   { id: 'photo', label: 'Photography', icon: Camera, description: 'Best lighting conditions' },
   { id: 'custom', label: 'Custom', icon: Settings, description: 'Your own parameters' },
 ]

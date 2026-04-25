@@ -15,7 +15,8 @@ const GOOD_SCORE_THRESHOLD = 70
 const HIGH_RISK_THRESHOLD = 50
 const MIN_IMPROVEMENT = 15
 
-const RUN_KEYWORDS = ['run', 'jog', 'walk', 'bike', 'cycle', 'yoga', 'hike']
+const RUN_KEYWORDS = ['run', 'jog', 'workout', 'yoga', 'hike']
+const COMMUTE_KEYWORDS = ['commute', 'drive', 'driving', 'car', 'walk to work', 'walking commute', 'bike to work', 'bike commute', 'cycle to work', 'cycling commute']
 const SOCIAL_KEYWORDS = ['picnic', 'terrace', 'drinks', 'dinner', 'bbq', 'outdoor', 'park', 'beach', 'rooftop']
 const PHOTO_KEYWORDS = ['photo', 'photos', 'photography', 'camera', 'golden hour', 'sunset']
 const INDOOR_KEYWORDS = ['meeting', 'call', 'standup', 'office', 'zoom', 'meet', 'review', 'workshop', 'study', 'deep work']
@@ -111,6 +112,7 @@ function getWeatherReason(
 }
 
 function inferActivity(text: string): Activity | null {
+  if (COMMUTE_KEYWORDS.some((keyword) => text.includes(keyword))) return 'commute'
   if (RUN_KEYWORDS.some((keyword) => text.includes(keyword))) return 'run'
   if (PHOTO_KEYWORDS.some((keyword) => text.includes(keyword))) return 'photo'
   if (SOCIAL_KEYWORDS.some((keyword) => text.includes(keyword))) return 'social'

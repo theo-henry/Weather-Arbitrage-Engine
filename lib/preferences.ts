@@ -11,7 +11,7 @@ import type {
   WeekdayKey,
 } from './types'
 
-const ACTIVITIES: Activity[] = ['run', 'study', 'social', 'flight', 'photo', 'custom']
+const ACTIVITIES: Activity[] = ['run', 'study', 'social', 'commute', 'photo', 'custom']
 const DEFAULT_CITY: City = 'Madrid'
 const DEFAULT_ACTIVITY: Activity = 'run'
 const DEFAULT_USUAL_TIME = '17:00'
@@ -38,11 +38,11 @@ const DEFAULT_COMFORTS: Record<Activity, ActivityWeatherComfort> = {
     maxWindSpeed: 20,
     maxPrecipitationProbability: 20,
   },
-  flight: {
-    minTemperature: -10,
-    maxTemperature: 40,
-    maxWindSpeed: 30,
-    maxPrecipitationProbability: 40,
+  commute: {
+    minTemperature: 5,
+    maxTemperature: 32,
+    maxWindSpeed: 28,
+    maxPrecipitationProbability: 35,
   },
   photo: {
     minTemperature: 8,
@@ -77,9 +77,13 @@ const DEFAULT_ACTIVITY_PROFILES: Record<Activity, ActivityPreferenceProfile> = {
     sunsetBonus: true,
     comfort: DEFAULT_COMFORTS.social,
   },
-  flight: {
-    turbulenceSensitivity: 'medium',
-    comfort: DEFAULT_COMFORTS.flight,
+  commute: {
+    commuteMode: 'car',
+    windSensitivity: 'medium',
+    rainAvoidance: 'medium',
+    daylightPreference: 50,
+    timeBias: 'neutral',
+    comfort: DEFAULT_COMFORTS.commute,
   },
   photo: {
     goldenHourPriority: true,
@@ -100,6 +104,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isActivity(value: unknown): value is Activity {
   return typeof value === 'string' && ACTIVITIES.includes(value as Activity)
+}
+
+function normalizeActivity(value: unknown): Activity | null {
+  if (value === 'flight') return 'commute'
+  return isActivity(value) ? value : null
 }
 
 function isCity(value: unknown): value is City {
@@ -140,7 +149,7 @@ function copyProfiles(): Record<Activity, ActivityPreferenceProfile> {
     run: copyProfile(DEFAULT_ACTIVITY_PROFILES.run),
     study: copyProfile(DEFAULT_ACTIVITY_PROFILES.study),
     social: copyProfile(DEFAULT_ACTIVITY_PROFILES.social),
-    flight: copyProfile(DEFAULT_ACTIVITY_PROFILES.flight),
+    commute: copyProfile(DEFAULT_ACTIVITY_PROFILES.commute),
     photo: copyProfile(DEFAULT_ACTIVITY_PROFILES.photo),
     custom: copyProfile(DEFAULT_ACTIVITY_PROFILES.custom),
   }
@@ -151,7 +160,7 @@ function emptyBlockedTimeRules(): Record<Activity, BlockedTimeRule[]> {
     run: [],
     study: [],
     social: [],
-    flight: [],
+    commute: [],
     photo: [],
     custom: [],
   }
@@ -241,6 +250,9 @@ function normalizeProfile(activity: Activity, value: unknown): ActivityPreferenc
   }
   if (value.cloudPreference === 'clear' || value.cloudPreference === 'dramatic') {
     normalized.cloudPreference = value.cloudPreference
+  }
+  if (value.commuteMode === 'car' || value.commuteMode === 'bike' || value.commuteMode === 'walk') {
+    normalized.commuteMode = value.commuteMode
   }
   if (
     value.turbulenceSensitivity === 'low' ||
@@ -344,6 +356,9 @@ function extractLegacyProfile(value: Record<string, unknown>): Partial<ActivityP
   if (value.cloudPreference === 'clear' || value.cloudPreference === 'dramatic') {
     legacy.cloudPreference = value.cloudPreference
   }
+  if (value.commuteMode === 'car' || value.commuteMode === 'bike' || value.commuteMode === 'walk') {
+    legacy.commuteMode = value.commuteMode
+  }
   if (
     value.turbulenceSensitivity === 'low' ||
     value.turbulenceSensitivity === 'medium' ||
@@ -359,12 +374,19 @@ export function normalizeUserPreferences(value: unknown): UserPreferences {
   const raw = isRecord(value) ? value : {}
   const city = isCity(raw.city) ? raw.city : DEFAULT_CITY
   const defaults = getDefaultUserPreferences(city)
-  const activity = isActivity(raw.activity) ? raw.activity : defaults.activity
+  const activity = normalizeActivity(raw.activity) ?? defaults.activity
 
   const activityProfiles = copyProfiles()
   if (isRecord(raw.activityProfiles)) {
     for (const candidate of ACTIVITIES) {
       activityProfiles[candidate] = normalizeProfile(candidate, raw.activityProfiles[candidate])
+    }
+    if (isRecord(raw.activityProfiles.flight)) {
+      activityProfiles.commute = mergeProfiles(
+        'commute',
+        activityProfiles.commute,
+        normalizeProfile('commute', raw.activityProfiles.flight),
+      )
     }
   }
 
@@ -377,6 +399,12 @@ export function normalizeUserPreferences(value: unknown): UserPreferences {
   if (isRecord(raw.blockedTimeRules)) {
     for (const candidate of ACTIVITIES) {
       blockedTimeRules[candidate] = normalizeBlockedTimeRules(raw.blockedTimeRules[candidate])
+    }
+    if (raw.blockedTimeRules.flight) {
+      blockedTimeRules.commute = [
+        ...blockedTimeRules.commute,
+        ...normalizeBlockedTimeRules(raw.blockedTimeRules.flight),
+      ].sort(sortBlockedTimeRules)
     }
   }
 

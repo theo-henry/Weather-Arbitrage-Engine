@@ -1,6 +1,6 @@
 import type { City, TimeWindow, WeatherConditions, WeatherConditionType, Confidence } from './types';
 import { getDefaultUserPreferences, getResolvedActivityPreferences } from './preferences';
-import { scoreRun, scoreStudy, scoreSocial, scoreFlight, scorePhoto, scoreWindow } from './scoring';
+import { scoreRun, scoreStudy, scoreSocial, scoreCommute, scorePhoto, scoreWindow } from './scoring';
 
 const CITY_LOCATIONS_MAP: Record<City, string[]> = {
   Madrid: ['Retiro Park', 'Casa de Campo', 'Madrid Río', 'El Capricho'],
@@ -179,7 +179,7 @@ export function getWindows(city: City): TimeWindow[] {
       const runResult = scoreRun(weather, getResolvedActivityPreferences(defaultPreferences, 'run'), hour);
       const studyResult = scoreStudy(weather, getResolvedActivityPreferences(defaultPreferences, 'study'), hour);
       const socialResult = scoreSocial(weather, getResolvedActivityPreferences(defaultPreferences, 'social'), hour, 20);
-      const flightResult = scoreFlight(weather, getResolvedActivityPreferences(defaultPreferences, 'flight'), hour);
+      const commuteResult = scoreCommute(weather, getResolvedActivityPreferences(defaultPreferences, 'commute'), hour);
       const photoResult = scorePhoto(weather, getResolvedActivityPreferences(defaultPreferences, 'photo'), hour, 20, 7);
       const customResult = scoreWindow(weather, getResolvedActivityPreferences(defaultPreferences, 'custom'), hour);
       
@@ -205,7 +205,7 @@ export function getWindows(city: City): TimeWindow[] {
           run: runResult.score,
           study: studyResult.score,
           social: socialResult.score,
-          flight: flightResult.score,
+          commute: commuteResult.score,
           photo: photoResult.score,
           custom: customResult.score,
         },

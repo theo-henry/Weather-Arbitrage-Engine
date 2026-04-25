@@ -40,7 +40,7 @@ const ACTIVITY_META: Record<Activity, ActivityMeta> = {
   photo: { label: 'Photo walk', color: 'violet', defaultTitle: 'Photo Walk' },
   social: { label: 'Social outing', color: 'amber', defaultTitle: 'Outdoor Plan' },
   study: { label: 'Study session', color: 'blue', defaultTitle: 'Study Session' },
-  flight: { label: 'Flight', color: 'blue', defaultTitle: 'Flight' },
+  commute: { label: 'Commute', color: 'blue', defaultTitle: 'Commute' },
   custom: { label: 'Activity', color: 'blue', defaultTitle: 'Outdoor Activity' },
 }
 

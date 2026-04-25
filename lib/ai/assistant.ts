@@ -91,8 +91,9 @@ function buildCompareModeInstruction() {
   return [
     'COMPARE MODE: Your job is to understand the user’s activity request and recommend the best weather windows for comparison cards.',
     'For recommendation requests, call find_optimal_slots and include requested_activity_label when the user names an activity.',
-    'Map general activities to the closest scored activity: outdoor exercise, tennis, hiking, cycling, walking, or workouts -> run; outdoor meals, drinks, dates, picnics, markets, parks, or social plans -> social; photography, video, sightseeing, sunrise, or sunset -> photo; flights, airport, aviation, or travel weather risk -> flight; study, reading, focus, writing, or laptop work -> study.',
-    'When duration is not specified, use sensible defaults: run/exercise 45 minutes, photo 60 minutes, social 120 minutes, study 90 minutes, flight 30 minutes.',
+    'Map general activities to the closest scored activity: outdoor exercise, tennis, hiking, or workouts -> run; outdoor meals, drinks, dates, picnics, markets, parks, or social plans -> social; photography, video, sightseeing, sunrise, or sunset -> photo; commute, driving, car trips, bike commute, cycling to work, walking commute, school run, office trip, or travel across town -> commute; study, reading, focus, writing, or laptop work -> study.',
+    'For commute requests, set commute_mode in account settings when the user specifies car, bike, or walking.',
+    'When duration is not specified, use sensible defaults: run/exercise 45 minutes, photo 60 minutes, social 120 minutes, study 90 minutes, commute 30 minutes.',
     'If you map a user activity to a scored profile, briefly explain the mapping in natural language.',
     'Prefer returning 3 options unless the user asks for fewer. Mention the top option and the weather reason behind it.',
     'Do not draft a calendar event in compare mode unless the user explicitly asks you to add or schedule something. The UI lets the user choose a card.',
@@ -211,7 +212,7 @@ export async function runAssistant(request: AssistantRequest): Promise<Assistant
         }
         const scoredActivity =
           typeof toolResponse.scoredActivity === 'string' &&
-          ['run', 'study', 'social', 'flight', 'photo'].includes(toolResponse.scoredActivity)
+            ['run', 'study', 'social', 'commute', 'photo'].includes(toolResponse.scoredActivity)
             ? (toolResponse.scoredActivity as CompareRecommendation['scoredActivity'])
             : null
         const slots = Array.isArray(toolResponse.slots) ? toolResponse.slots : []

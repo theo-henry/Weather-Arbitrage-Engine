@@ -1,6 +1,7 @@
-export type Activity = 'run' | 'study' | 'social' | 'flight' | 'photo' | 'custom';
+export type Activity = 'run' | 'study' | 'social' | 'commute' | 'photo' | 'custom';
 export type City = 'Madrid' | 'Barcelona' | 'Valencia' | 'Seville';
 export type Confidence = 'High' | 'Medium' | 'Low';
+export type CommuteMode = 'car' | 'bike' | 'walk';
 export type Sensitivity = 'low' | 'medium' | 'high';
 export type TimeBias = 'morning' | 'neutral' | 'evening';
 export type WeatherConditionType = 'clear' | 'partly-cloudy' | 'cloudy' | 'rain' | 'drizzle' | 'storm' | 'snow';
@@ -25,6 +26,8 @@ export interface ActivityPreferenceProfile {
   sunsetBonus?: boolean;
   goldenHourPriority?: boolean;
   cloudPreference?: 'clear' | 'dramatic';
+  commuteMode?: CommuteMode;
+  /** @deprecated Legacy flight preference kept only for normalization compatibility. */
   turbulenceSensitivity?: Sensitivity;
   comfort?: ActivityWeatherComfort;
 }
@@ -68,7 +71,7 @@ export interface TimeWindow {
     run: number;
     study: number;
     social: number;
-    flight: number;
+    commute: number;
     photo: number;
     custom: number;
   };
@@ -240,10 +243,10 @@ export const ACTIVITY_CONFIG: Record<Activity, { label: string; icon: string; fa
     icon: 'wine',
     factors: ['temperature', 'rain', 'wind', 'sunset', 'atmosphere'],
   },
-  flight: {
-    label: 'Flights',
-    icon: 'plane',
-    factors: ['turbulence', 'weather', 'stability', 'timing'],
+  commute: {
+    label: 'Commute',
+    icon: 'car',
+    factors: ['rain', 'wind', 'temperature', 'safety', 'daylight', 'timing'],
   },
   photo: {
     label: 'Photography',

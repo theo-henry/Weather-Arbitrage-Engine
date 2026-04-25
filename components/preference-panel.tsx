@@ -208,15 +208,42 @@ export function PreferencePanel({
           </>
         )}
 
-        {preferences.activity === 'flight' && (
-          <SegmentedPreferenceRow
-            label="Turbulence Sensitivity"
-            options={['low', 'medium', 'high']}
-            value={activeProfile.turbulenceSensitivity ?? 'medium'}
-            onChange={(value) =>
-              updateProfile({ turbulenceSensitivity: value as ActivityPreferenceProfile['turbulenceSensitivity'] })
-            }
-          />
+        {preferences.activity === 'commute' && (
+          <>
+            <SegmentedPreferenceRow
+              label="Commute Mode"
+              options={['car', 'bike', 'walk']}
+              value={activeProfile.commuteMode ?? 'car'}
+              onChange={(value) =>
+                updateProfile({ commuteMode: value as ActivityPreferenceProfile['commuteMode'] })
+              }
+            />
+
+            <SegmentedPreferenceRow
+              label="Rain Avoidance"
+              options={['low', 'medium', 'high']}
+              value={activeProfile.rainAvoidance ?? 'medium'}
+              onChange={(value) => updateProfile({ rainAvoidance: value as ActivityPreferenceProfile['rainAvoidance'] })}
+            />
+
+            <SegmentedPreferenceRow
+              label="Wind Sensitivity"
+              options={['low', 'medium', 'high']}
+              value={activeProfile.windSensitivity ?? 'medium'}
+              onChange={(value) => updateProfile({ windSensitivity: value as ActivityPreferenceProfile['windSensitivity'] })}
+            />
+
+            {(activeProfile.commuteMode === 'bike' || activeProfile.commuteMode === 'walk') && (
+              <LabeledSlider
+                label="Daylight Preference"
+                value={activeProfile.daylightPreference ?? 50}
+                minLabel="Flexible"
+                maxLabel="Daylight only"
+                step={10}
+                onChange={(value) => updateProfile({ daylightPreference: value })}
+              />
+            )}
+          </>
         )}
 
         {preferences.activity === 'photo' && (

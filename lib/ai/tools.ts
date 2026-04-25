@@ -15,6 +15,7 @@ import type {
   BlockedTimeRule,
   CalendarEvent,
   City,
+  CommuteMode,
   EventCategory,
   EventColor,
   PendingCalendarOperation,
@@ -44,14 +45,14 @@ interface ToolExecutionResult {
   referencedEventIds?: string[]
 }
 
-const SCORABLE_ACTIVITIES: ScorableActivity[] = ['run', 'study', 'social', 'flight', 'photo']
+const SCORABLE_ACTIVITIES: ScorableActivity[] = ['run', 'study', 'social', 'commute', 'photo']
 
 const DEFAULT_COLORS: Record<string, EventColor> = {
   run: 'amber',
   study: 'violet',
   social: 'pink',
   photo: 'amber',
-  flight: 'blue',
+  commute: 'blue',
   custom: 'blue',
 }
 
@@ -263,7 +264,7 @@ function sanitizeParticipants(participants: unknown): string[] | undefined {
 function isActivity(value: unknown): value is Activity {
   return (
     typeof value === 'string' &&
-    ['run', 'study', 'social', 'flight', 'photo', 'custom'].includes(value)
+    ['run', 'study', 'social', 'commute', 'photo', 'custom'].includes(value)
   )
 }
 
@@ -361,7 +362,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
         properties: {
           relative_day: { type: 'string', enum: ['today', 'tomorrow'] },
           title_query: { type: 'string' },
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo', 'custom'] },
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
           limit: { type: 'integer' },
         },
       },
@@ -386,7 +387,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo'] },
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo'] },
           start_time: { type: 'string', description: 'ISO timestamp' },
           end_time: { type: 'string', description: 'ISO timestamp' },
           relative_day: { type: 'string', enum: ['today', 'tomorrow'] },
@@ -401,7 +402,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo'] },
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo'] },
           requested_activity_label: {
             type: 'string',
             description: 'The user-facing activity name, especially when mapping a custom activity to a scored profile.',
@@ -423,7 +424,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo'] },
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo'] },
           start_time: { type: 'string', description: 'ISO timestamp' },
           end_time: { type: 'string', description: 'ISO timestamp' },
         },
@@ -447,7 +448,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo', 'custom'] },
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
         },
       },
     },
@@ -458,7 +459,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo', 'custom'] },
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
           set_selected_activity: { type: 'boolean' },
           city: { type: 'string', enum: ['Madrid', 'Barcelona', 'Valencia', 'Seville'] },
           usual_time: { type: 'string', description: 'HH:MM' },
@@ -476,7 +477,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
               sunset_bonus: { type: 'boolean' },
               golden_hour_priority: { type: 'boolean' },
               cloud_preference: { type: 'string', enum: ['clear', 'dramatic'] },
-              turbulence_sensitivity: { type: 'string', enum: ['low', 'medium', 'high'] },
+              commute_mode: { type: 'string', enum: ['car', 'bike', 'walk'] },
             },
           },
           comfort_updates: {
@@ -527,7 +528,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
           start_time: { type: 'string', description: 'ISO timestamp' },
           end_time: { type: 'string', description: 'ISO timestamp' },
           category: { type: 'string', enum: ['weather-sensitive', 'indoor'] },
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo', 'custom'] },
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
           color: { type: 'string', enum: ['blue', 'green', 'amber', 'red', 'violet', 'pink'] },
           location: { type: 'string' },
           participants: { type: 'array', items: { type: 'string' } },
@@ -548,7 +549,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
           start_time: { type: 'string', description: 'ISO timestamp' },
           end_time: { type: 'string', description: 'ISO timestamp' },
           category: { type: 'string', enum: ['weather-sensitive', 'indoor'] },
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'flight', 'photo', 'custom'] },
+          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
           color: { type: 'string', enum: ['blue', 'green', 'amber', 'red', 'violet', 'pink'] },
           location: { type: 'string' },
           participants: { type: 'array', items: { type: 'string' } },
@@ -935,13 +936,9 @@ function executeUpdateAccountSettings(args: Record<string, unknown>, context: To
       nextProfile.cloudPreference = updates.cloud_preference
       appliedChanges.push(`${targetActivity} cloud preference set to ${updates.cloud_preference}`)
     }
-    if (
-      updates.turbulence_sensitivity === 'low' ||
-      updates.turbulence_sensitivity === 'medium' ||
-      updates.turbulence_sensitivity === 'high'
-    ) {
-      nextProfile.turbulenceSensitivity = updates.turbulence_sensitivity
-      appliedChanges.push(`${targetActivity} turbulence sensitivity set to ${updates.turbulence_sensitivity}`)
+    if (updates.commute_mode === 'car' || updates.commute_mode === 'bike' || updates.commute_mode === 'walk') {
+      nextProfile.commuteMode = updates.commute_mode as CommuteMode
+      appliedChanges.push(`${targetActivity} commute mode set to ${updates.commute_mode}`)
     }
   }
 

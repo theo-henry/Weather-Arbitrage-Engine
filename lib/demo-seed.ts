@@ -6,6 +6,59 @@ import { computeSuggestion } from './weather-suggestions';
 const DEMO_CITY: City = 'Madrid';
 const DEMO_TIME_ZONE = 'Europe/Madrid';
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEMO_BLOCKED_ACTIVITIES: Array<keyof UserPreferences['blockedTimeRules']> = [
+  'run',
+  'study',
+  'social',
+  'commute',
+  'photo',
+  'custom',
+];
+const DEMO_BLOCKED_WEEKDAYS: Array<UserPreferences['blockedTimeRules']['run'][number]['day']> = [
+  'sun',
+  'mon',
+  'tue',
+  'wed',
+  'thu',
+  'fri',
+  'sat',
+];
+
+export function applyDemoBlockedTimeRules(preferences: UserPreferences): UserPreferences {
+  const lateNightBlockedRules = DEMO_BLOCKED_WEEKDAYS.map((day) => ({
+    id: `demo-block-${day}-2300-2400`,
+    day,
+    startTime: '23:00',
+    endTime: '24:00',
+  }));
+
+  return {
+    ...preferences,
+    blockedTimeRules: DEMO_BLOCKED_ACTIVITIES.reduce(
+      (rules, activity) => {
+        const existingRules = rules[activity] ?? [];
+        const missingRules = lateNightBlockedRules.filter(
+          (rule) =>
+            !existingRules.some(
+              (existing) =>
+                existing.day === rule.day &&
+                existing.startTime === rule.startTime &&
+                existing.endTime === rule.endTime,
+            ),
+        );
+
+        return {
+          ...rules,
+          [activity]: [
+            ...existingRules,
+            ...missingRules.map((rule) => ({ ...rule })),
+          ],
+        };
+      },
+      { ...preferences.blockedTimeRules },
+    ),
+  };
+}
 
 type WeatherSeedActivity = 'run' | 'social' | 'photo';
 type DayKind = 'weekday' | 'weekend' | 'any';
@@ -50,7 +103,7 @@ interface CandidateWeatherEvent {
 const DEMO_PREFERENCES: UserPreferences = (() => {
   const preferences = getDefaultUserPreferences(DEMO_CITY);
 
-  return {
+  return applyDemoBlockedTimeRules({
     ...preferences,
     activity: 'run',
     usualTime: '18:30',
@@ -62,7 +115,7 @@ const DEMO_PREFERENCES: UserPreferences = (() => {
         rainAvoidance: 'high',
       },
     },
-  };
+  });
 })();
 
 const WEATHER_EVENT_PLANS: WeatherEventPlan[] = [
