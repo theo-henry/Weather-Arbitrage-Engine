@@ -20,6 +20,18 @@ import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import { useWeatherData } from '@/hooks/use-weather-data'
 import { usePreferences } from '@/hooks/use-preferences'
 import { useUser } from '@/hooks/use-user'
+import { isSupabaseConfigured } from '@/lib/supabase/public-config'
+import { ACTIVITY_CONFIG } from '@/lib/types'
+import type { CalendarEvent, EventColor } from '@/lib/types'
+
+const ACTIVITY_COLORS: Record<string, EventColor> = {
+  run: 'amber',
+  study: 'violet',
+  social: 'pink',
+  photo: 'amber',
+  commute: 'blue',
+  custom: 'blue',
+}
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -59,12 +71,39 @@ export default function DashboardPage() {
   }, [])
 
   const handleAddToCalendar = useCallback(() => {
-    if (!user) {
+    if (isSupabaseConfigured() && !user) {
       router.push('/signup?next=/scheduler')
       return
     }
+    if (!bestWindow) return
+
+    // Build a CalendarEvent from the recommended window
+    const startDate = new Date(bestWindow.date)
+    const [sh, sm] = bestWindow.startTime.split(':').map(Number)
+    startDate.setHours(sh, sm, 0, 0)
+    const endDate = new Date(bestWindow.date)
+    const [eh, em] = bestWindow.endTime.split(':').map(Number)
+    endDate.setHours(eh, em, 0, 0)
+
+    const event: CalendarEvent = {
+      id: `dash-${Date.now()}`,
+      title: ACTIVITY_CONFIG[preferences.activity].label,
+      startTime: startDate.toISOString(),
+      endTime: endDate.toISOString(),
+      category: 'weather-sensitive',
+      activity: preferences.activity,
+      color: ACTIVITY_COLORS[preferences.activity] ?? 'blue',
+      location: bestWindow.location,
+      weatherScore: bestWindow.scores[preferences.activity],
+      createdVia: 'ui',
+    }
+
+    try {
+      sessionStorage.setItem('pendingCalendarEvent', JSON.stringify(event))
+    } catch {}
+
     router.push('/scheduler')
-  }, [user, router])
+  }, [user, router, bestWindow, preferences.activity])
 
   const PreferencePanelContent = (
     <PreferencePanel

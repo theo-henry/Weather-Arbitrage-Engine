@@ -53,6 +53,24 @@ function SchedulerContent() {
     } catch {}
   }, [])
 
+  // Pick up a pending event from the dashboard "Add to Calendar" button
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('pendingCalendarEvent')
+      if (!raw) return
+      sessionStorage.removeItem('pendingCalendarEvent')
+      const event = JSON.parse(raw) as CalendarEvent
+      // Small delay so the calendar is visible before the event drops in
+      const timer = setTimeout(() => {
+        dispatch({ type: 'ADD_EVENT', event })
+        setHighlightEventId(event.id)
+        setTimeout(() => setHighlightEventId(null), 5000)
+      }, 400)
+      return () => clearTimeout(timer)
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const personalizedWindows = useMemo(
     () => applyPreferenceScoresToWindows(windows, preferences),
     [windows, preferences],

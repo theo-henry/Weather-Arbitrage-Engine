@@ -81,13 +81,13 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
+      initial={isHighlighted ? { opacity: 0, scale: 0.7, y: -30 } : { opacity: 0, scale: 0.95 }}
       animate={
         isHighlighted
-          ? { opacity: 1, scale: [1, 1.04, 1, 1.04, 1], boxShadow: ['0 0 0 0px rgba(99,102,241,0)', '0 0 0 4px rgba(99,102,241,0.5)', '0 0 0 0px rgba(99,102,241,0)', '0 0 0 4px rgba(99,102,241,0.5)', '0 0 0 0px rgba(99,102,241,0)'] }
+          ? { opacity: 1, scale: [1, 1.04, 1, 1.04, 1], y: 0, boxShadow: ['0 0 0 0px rgba(99,102,241,0)', '0 0 0 4px rgba(99,102,241,0.5)', '0 0 0 0px rgba(99,102,241,0)', '0 0 0 4px rgba(99,102,241,0.5)', '0 0 0 0px rgba(99,102,241,0)'] }
           : { opacity: 1, scale: 1 }
       }
-      transition={isHighlighted ? { duration: 2, times: [0, 0.25, 0.5, 0.75, 1] } : undefined}
+      transition={isHighlighted ? { duration: 2, times: [0, 0.25, 0.5, 0.75, 1], y: { duration: 0.4, ease: [0.34, 1.56, 0.64, 1] } } : undefined}
       className={cn(
         'absolute rounded-md border-l-[3px] cursor-pointer group select-none overflow-hidden',
         colors.bg,
