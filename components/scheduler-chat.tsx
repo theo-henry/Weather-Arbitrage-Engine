@@ -74,7 +74,7 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
   const [preferences, setPreferences] = usePreferences()
   const [messages, setMessages] = useState<ChatMessage[]>([
     createMessage(
-      ‘assistant’,
+      'assistant',
       `Hi! Tell me what you’d like to do and when — for example "I want to go for a run tomorrow morning" or "Schedule a walk on Saturday afternoon." I’ll check the weather and add it to your calendar.`
     ),
   ])
