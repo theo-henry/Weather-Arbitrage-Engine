@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback, useEffect, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft, MessageSquare, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Navbar } from '@/components/navbar'
@@ -33,7 +32,6 @@ function SchedulerContent() {
   const { windows } = useWeatherData(city)
   const { state, dispatch } = useCalendarStore()
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
-  const searchParams = useSearchParams()
 
   // Event dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -43,14 +41,17 @@ function SchedulerContent() {
   const [autoProtectOpen, setAutoProtectOpen] = useState(false)
   const [highlightEventId, setHighlightEventId] = useState<string | null>(null)
 
-  // Read highlight param from URL and clear after 5 seconds
+  // Read highlight ID from sessionStorage (set by compare page) and clear after 5 seconds
   useEffect(() => {
-    const id = searchParams.get('highlight')
-    if (!id) return
-    setHighlightEventId(id)
-    const timer = setTimeout(() => setHighlightEventId(null), 5000)
-    return () => clearTimeout(timer)
-  }, [searchParams])
+    try {
+      const id = sessionStorage.getItem('highlightEventId')
+      if (!id) return
+      sessionStorage.removeItem('highlightEventId')
+      setHighlightEventId(id)
+      const timer = setTimeout(() => setHighlightEventId(null), 5000)
+      return () => clearTimeout(timer)
+    } catch {}
+  }, [])
 
   const personalizedWindows = useMemo(
     () => applyPreferenceScoresToWindows(windows, preferences),
@@ -350,9 +351,7 @@ function SchedulerContent() {
 export default function SchedulerPage() {
   return (
     <CalendarStoreProvider>
-      <Suspense fallback={null}>
-        <SchedulerContent />
-      </Suspense>
+      <SchedulerContent />
     </CalendarStoreProvider>
   )
 }

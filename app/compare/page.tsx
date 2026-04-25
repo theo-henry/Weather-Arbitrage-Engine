@@ -276,10 +276,9 @@ export default function ComparePage() {
 
   function handleGoToCalendar() {
     if (scheduledEventId) {
-      router.push(`/scheduler?highlight=${scheduledEventId}`)
-    } else {
-      router.push('/scheduler')
+      try { sessionStorage.setItem('highlightEventId', scheduledEventId) } catch {}
     }
+    router.push('/scheduler')
   }
 
   const showCards = step === 'show_results' || step === 'scheduled'
