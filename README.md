@@ -1,5 +1,7 @@
 # Weather Scheduler
 
+**Live demo: [weather-scheduler-three.vercel.app](https://weather-scheduler-three.vercel.app/)**
+
 Weather Scheduler is a weather-aware scheduling app that answers a more useful question than a normal forecast: **when should I do this activity?**
 
 Instead of showing raw weather data, the app scores upcoming 30-minute time windows for different activities, explains the tradeoffs, and helps users add the best option to a calendar. It is built for decisions like when to run, study outside, plan dinner on a terrace, take photos, or avoid weather-risky travel windows.
@@ -15,6 +17,13 @@ Instead of showing raw weather data, the app scores upcoming 30-minute time wind
 - Uses live Google Weather data when configured, with deterministic mock weather fallback for reliable demos.
 
 ## Hackathon Demo Flow
+
+Visit the live app at **[weather-scheduler-three.vercel.app](https://weather-scheduler-three.vercel.app/)** and log in with the demo account to explore all features without setting up anything:
+
+```text
+Email:    demo@weatherscheduler.com
+Password: demo2026
+```
 
 1. Open the app and go to the dashboard.
 2. Choose an activity, city, usual time, and weather preferences.
