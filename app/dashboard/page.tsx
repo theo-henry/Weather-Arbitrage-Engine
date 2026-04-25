@@ -17,8 +17,10 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { getTopWindows, getWindowAtTime } from '@/lib/mockData'
 import { isTimeWindowBlockedForAnyActivity } from '@/lib/preferences'
 import { applyPreferenceScoresToWindows } from '@/lib/scoring'
+import { doesWindowConflictWithEvents } from '@/lib/weather-suggestions'
 import { useWeatherData } from '@/hooks/use-weather-data'
 import { usePreferences } from '@/hooks/use-preferences'
+import { useCalendarEvents } from '@/hooks/use-calendar-events'
 import { useUser } from '@/hooks/use-user'
 import { isSupabaseConfigured } from '@/lib/supabase/public-config'
 import { ACTIVITY_CONFIG } from '@/lib/types'
@@ -38,15 +40,19 @@ export default function DashboardPage() {
   const { user } = useUser()
   const [preferences, setPreferences, preferencesReady] = usePreferences()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { events: calendarEvents } = useCalendarEvents()
 
   // Get windows for the selected city (live API with mock fallback)
   const { windows, loading, isLive } = useWeatherData(preferences.city)
 
-  // Blocked preference windows are hard constraints, so remove them before scoring or ranking suggestions.
+  // Blocked preference windows and existing calendar events are hard constraints —
+  // remove them before scoring or ranking suggestions.
   const eligibleWindows = useMemo(() => {
     if (!preferencesReady) return []
-    return windows.filter((window) => !isTimeWindowBlockedForAnyActivity(preferences, window))
-  }, [windows, preferences, preferencesReady])
+    return windows
+      .filter((window) => !isTimeWindowBlockedForAnyActivity(preferences, window))
+      .filter((window) => !doesWindowConflictWithEvents(window, calendarEvents))
+  }, [windows, preferences, preferencesReady, calendarEvents])
 
   // Recalculate scores based on preferences only after blocked windows have been excluded.
   const scoredWindows = useMemo(() => applyPreferenceScoresToWindows(eligibleWindows, preferences), [eligibleWindows, preferences])
@@ -179,10 +185,10 @@ export default function DashboardPage() {
                   />
                 ) : !loading && (
                   <div className="rounded-2xl border border-border/50 bg-card p-6">
-                    <h2 className="text-lg font-semibold">No unblocked windows available</h2>
+                    <h2 className="text-lg font-semibold">No available windows</h2>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      Every forecast window for {preferences.activity} currently overlaps your blocked time rules.
-                      Adjust the blocked windows in your preferences to see recommendations.
+                      Every forecast window for {preferences.activity} currently overlaps your blocked time rules or existing calendar events.
+                      Adjust your preferences or clear some events to see recommendations.
                     </p>
                   </div>
                 )}

@@ -65,7 +65,7 @@ export function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="text-lg sm:text-xl text-muted-foreground mb-4 max-w-2xl mx-auto text-balance"
+          className="text-lg sm:text-xl text-white/90 mb-4 max-w-2xl mx-auto text-balance"
         >
           Ask for a plan, get the best weather-aware time.
         </motion.p>
@@ -74,7 +74,7 @@ export function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.3 }}
-          className="text-base text-muted-foreground mb-10 max-w-xl mx-auto text-pretty"
+          className="text-base text-white/80 mb-10 max-w-xl mx-auto text-pretty"
         >
           Chat with the scheduler, compare forecast windows against your calendar and preferences, then confirm changes before they apply. Auto-Protect keeps watching for risky weather and suggests safer moves.
         </motion.p>

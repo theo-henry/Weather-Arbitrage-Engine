@@ -30,7 +30,7 @@ function SchedulerContent() {
   const [preferences] = usePreferences()
   const city = preferences.city
   const { windows } = useWeatherData(city)
-  const { state, dispatch } = useCalendarStore()
+  const { state, dispatch, hydrated } = useCalendarStore()
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
 
   // Event dialog state
@@ -53,8 +53,10 @@ function SchedulerContent() {
     } catch {}
   }, [])
 
-  // Pick up a pending event from the dashboard "Add to Calendar" button
+  // Pick up a pending event from the dashboard "Add to Calendar" button.
+  // Wait for hydration so ADD_EVENT fires after LOAD_EVENTS (avoids overwrite).
   useEffect(() => {
+    if (!hydrated) return
     try {
       const raw = sessionStorage.getItem('pendingCalendarEvent')
       if (!raw) return
@@ -68,8 +70,7 @@ function SchedulerContent() {
       }, 400)
       return () => clearTimeout(timer)
     } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [hydrated, dispatch])
 
   const personalizedWindows = useMemo(
     () => applyPreferenceScoresToWindows(windows, preferences),

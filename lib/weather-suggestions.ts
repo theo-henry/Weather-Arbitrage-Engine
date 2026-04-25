@@ -170,7 +170,7 @@ function getSuggestionFingerprint(event: CalendarEvent, suggestion: SuggestedAlt
   ].join('|')
 }
 
-function getConflictingEvents(
+export function getConflictingEvents(
   startTime: Date,
   endTime: Date,
   events: CalendarEvent[],
@@ -182,6 +182,22 @@ function getConflictingEvents(
     const eventEnd = new Date(event.endTime)
     return startTime < eventEnd && endTime > eventStart
   })
+}
+
+export function doesWindowConflictWithEvents(
+  window: TimeWindow,
+  events: CalendarEvent[]
+): boolean {
+  if (events.length === 0) return false
+  const windowStart = new Date(window.date)
+  const [sh, sm] = window.startTime.split(':').map(Number)
+  windowStart.setHours(sh, sm, 0, 0)
+
+  const windowEnd = new Date(window.date)
+  const [eh, em] = window.endTime.split(':').map(Number)
+  windowEnd.setHours(eh, em, 0, 0)
+
+  return getConflictingEvents(windowStart, windowEnd, events).length > 0
 }
 
 export function computeSuggestion(

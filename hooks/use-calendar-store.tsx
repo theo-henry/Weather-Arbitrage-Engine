@@ -8,6 +8,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type Dispatch,
 } from 'react'
 import {
@@ -21,6 +22,7 @@ import { useUser } from '@/hooks/use-user'
 interface CalendarStoreContextValue {
   state: CalendarState
   dispatch: Dispatch<CalendarAction>
+  hydrated: boolean
 }
 
 const CalendarStoreContext = createContext<CalendarStoreContextValue | null>(null)
@@ -78,16 +80,18 @@ export function CalendarStoreProvider({ children }: { children: React.ReactNode 
   const { user, loading } = useUser()
   const [state, baseDispatch] = useReducer(calendarReducer, initialState)
   const stateRef = useRef(state)
-  const hydrated = useRef(false)
+  const hydratedRef = useRef(false)
+  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
     stateRef.current = state
   }, [state])
 
   useEffect(() => {
-    if (loading || hydrated.current) return
+    if (loading || hydratedRef.current) return
     if (!user) {
-      hydrated.current = true
+      hydratedRef.current = true
+      setHydrated(true)
       return
     }
 
@@ -97,10 +101,12 @@ export function CalendarStoreProvider({ children }: { children: React.ReactNode 
       .then((data: { events?: CalendarEvent[] }) => {
         if (cancelled) return
         baseDispatch({ type: 'LOAD_EVENTS', events: data.events ?? [] })
-        hydrated.current = true
+        hydratedRef.current = true
+        setHydrated(true)
       })
       .catch(() => {
-        hydrated.current = true
+        hydratedRef.current = true
+        setHydrated(true)
       })
 
     return () => {
@@ -112,12 +118,12 @@ export function CalendarStoreProvider({ children }: { children: React.ReactNode 
     const prev = stateRef.current
     const next = calendarReducer(prev, action)
     baseDispatch(action)
-    if (user && hydrated.current && action.type !== 'LOAD_EVENTS') {
+    if (user && hydratedRef.current && action.type !== 'LOAD_EVENTS') {
       void persistAction(action, prev, next)
     }
   }, [user])
 
-  const value = useMemo(() => ({ state, dispatch }), [state, dispatch])
+  const value = useMemo(() => ({ state, dispatch, hydrated }), [state, dispatch, hydrated])
 
   return (
     <CalendarStoreContext.Provider value={value}>
