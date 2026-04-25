@@ -68,7 +68,7 @@ function SignupForm() {
             </div>
           </div>
           <span className="font-semibold text-lg">
-            Weather <span className="edge-gradient-text">Arbitrage</span>
+            Weather <span className="edge-gradient-text">Scheduler</span>
           </span>
         </Link>
 

@@ -1,6 +1,6 @@
-# Weather Arbitrage Engine
+# Weather Scheduler
 
-Weather Arbitrage Engine is a weather-aware scheduling app that answers a more useful question than a normal forecast: **when should I do this activity?**
+Weather Scheduler is a weather-aware scheduling app that answers a more useful question than a normal forecast: **when should I do this activity?**
 
 Instead of showing raw weather data, the app scores upcoming 30-minute time windows for different activities, explains the tradeoffs, and helps users add the best option to a calendar. It is built for decisions like when to run, study outside, plan dinner on a terrace, take photos, or avoid weather-risky travel windows.
 
@@ -40,7 +40,7 @@ Instead of showing raw weather data, the app scores upcoming 30-minute time wind
 | Page | Purpose |
 | --- | --- |
 | `/` | Product overview and entry point. |
-| `/dashboard` | Main weather arbitrage dashboard with scoring, ranking, comparison, and insights. |
+| `/dashboard` | Main weather scheduling dashboard with scoring, ranking, comparison, and insights. |
 | `/compare` | Chat-driven activity comparison with recommendation cards and one-click scheduling. |
 | `/scheduler` | Calendar, AI scheduling assistant, saved events, and Auto-Protect suggestions. |
 | `/about` | Explanation of the scoring philosophy and supported activity types. |
@@ -143,7 +143,7 @@ That creates:
 The login page includes a demo login action. When `SUPABASE_SERVICE_ROLE_KEY` is configured, it creates or refreshes:
 
 ```text
-demo@weatherarbitrage.com / demo2026
+demo@weatherscheduler.com / demo2026
 ```
 
 ## Run Locally
@@ -202,4 +202,4 @@ pnpm start
 
 Weather affects outcomes, not just plans. A forecast can tell someone it might rain at 18:00, but it does not tell them whether 17:30 is still good for a run, whether their usual photo walk is worse than golden hour tomorrow, or whether an outdoor dinner should move by one hour.
 
-Weather Arbitrage Engine turns forecast data into scheduling decisions.
+Weather Scheduler turns forecast data into scheduling decisions.

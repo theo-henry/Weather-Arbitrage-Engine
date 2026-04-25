@@ -41,7 +41,7 @@ export function Navbar() {
               </div>
             </div>
             <span className="font-semibold text-lg hidden sm:block">
-              Weather <span className="edge-gradient-text">Arbitrage</span>
+              Weather <span className="edge-gradient-text">Scheduler</span>
             </span>
           </Link>
 

@@ -17,7 +17,7 @@ Requires `GOOGLE_WEATHER_API_KEY` in `.env.local` for live weather data. The app
 
 ## Architecture
 
-**Weather Arbitrage Engine** scores 96 half-hour time slots over 48 hours to find optimal windows for outdoor activities (run, study, social, flight, photo) based on real weather data and user preferences.
+**Weather Scheduler** scores 96 half-hour time slots over 48 hours to find optimal windows for outdoor activities (run, study, social, flight, photo) based on real weather data and user preferences.
 
 ### Data Flow
 

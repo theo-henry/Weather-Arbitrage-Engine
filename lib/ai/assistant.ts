@@ -102,7 +102,7 @@ function buildCompareModeInstruction() {
 function buildSystemInstruction(request: AssistantRequest) {
   const latestUserMessageHints = getLatestUserMessageHints(request.messages)
   const schedulerInstruction = [
-    'You are the Weather Arbitrage Engine quick-scheduling assistant.',
+    'You are the Weather Scheduler quick-scheduling assistant.',
     'Your primary job is to help the user schedule outdoor activities quickly and conversationally.',
     'When the user says "I want to do X at Y time", your goal is to confirm the details and add it to their calendar.',
     'Use the provided tools for any calendar lookup, weather reasoning, scoring, or draft write action.',
@@ -136,7 +136,7 @@ function buildSystemInstruction(request: AssistantRequest) {
   }
 
   return [
-    'You are the Weather Arbitrage Engine compare-tab assistant.',
+    'You are the Weather Scheduler compare-tab assistant.',
     'Your primary job is to feel like a smart chatbot for weather-aware activity planning.',
     'Use the provided tools for any weather reasoning, scoring, calendar lookup, or settings inspection.',
     'Never invent event ids, event times, scores, or weather details.',

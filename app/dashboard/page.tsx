@@ -15,6 +15,7 @@ import { InsightPanel } from '@/components/insight-panel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { getTopWindows, getWindowAtTime } from '@/lib/mockData'
+import { isTimeWindowBlockedForAnyActivity } from '@/lib/preferences'
 import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import { useWeatherData } from '@/hooks/use-weather-data'
 import { usePreferences } from '@/hooks/use-preferences'
@@ -29,8 +30,13 @@ export default function DashboardPage() {
   // Get windows for the selected city (live API with mock fallback)
   const { windows, loading, isLive } = useWeatherData(preferences.city)
 
-  // Recalculate scores based on preferences
-  const scoredWindows = useMemo(() => applyPreferenceScoresToWindows(windows, preferences), [windows, preferences])
+  // Blocked preference windows are hard constraints, so remove them before scoring or ranking suggestions.
+  const eligibleWindows = useMemo(() => {
+    return windows.filter((window) => !isTimeWindowBlockedForAnyActivity(preferences, window))
+  }, [windows, preferences])
+
+  // Recalculate scores based on preferences only after blocked windows have been excluded.
+  const scoredWindows = useMemo(() => applyPreferenceScoresToWindows(eligibleWindows, preferences), [eligibleWindows, preferences])
 
   // Get top windows sorted by current activity score
   const topWindows = useMemo(() => {
@@ -114,7 +120,7 @@ export default function DashboardPage() {
 
               {/* Recommendation Card */}
               <div id="recommendation">
-                {bestWindow && (
+                {bestWindow ? (
                   <RecommendationCard
                     window={bestWindow}
                     activity={preferences.activity}
@@ -124,6 +130,14 @@ export default function DashboardPage() {
                       document.getElementById('insights')?.scrollIntoView({ behavior: 'smooth' })
                     }}
                   />
+                ) : !loading && (
+                  <div className="rounded-2xl border border-border/50 bg-card p-6">
+                    <h2 className="text-lg font-semibold">No unblocked windows available</h2>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Every forecast window for {preferences.activity} currently overlaps your blocked time rules.
+                      Adjust the blocked windows in your preferences to see recommendations.
+                    </p>
+                  </div>
                 )}
               </div>
 

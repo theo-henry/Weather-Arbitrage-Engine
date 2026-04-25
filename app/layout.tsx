@@ -17,11 +17,11 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Weather Arbitrage Engine',
+  title: 'Weather Scheduler',
   description: 'Find the best time to act — not just the weather. We analyze the next 48 hours and surface the window where conditions give you an edge.',
   generator: 'v0.app',
   keywords: ['weather', 'optimization', 'scheduling', 'productivity', 'outdoor activities'],
-  authors: [{ name: 'Weather Arbitrage Engine' }],
+  authors: [{ name: 'Weather Scheduler' }],
   icons: {
     icon: [{ url: '/cloud-icon.svg', type: 'image/svg+xml' }],
     shortcut: '/cloud-icon.svg',

@@ -51,7 +51,7 @@ function LoginForm() {
   async function handleDemoLogin() {
     setError(null)
     setDemoLoading(true)
-    setEmail('demo@weatherarbitrage.com')
+    setEmail('demo@weatherscheduler.com')
     setPassword('demo2026')
 
     // Ensure demo account exists (creates it if needed)
@@ -63,7 +63,7 @@ function LoginForm() {
       return
     }
 
-    await handleLogin('demo@weatherarbitrage.com', 'demo2026')
+    await handleLogin('demo@weatherscheduler.com', 'demo2026')
     setDemoLoading(false)
   }
 
@@ -78,7 +78,7 @@ function LoginForm() {
             </div>
           </div>
           <span className="font-semibold text-lg">
-            Weather <span className="edge-gradient-text">Arbitrage</span>
+            Weather <span className="edge-gradient-text">Scheduler</span>
           </span>
         </Link>
 

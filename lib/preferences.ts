@@ -5,6 +5,7 @@ import type {
   BlockedTimeRule,
   City,
   ResolvedActivityPreferences,
+  TimeWindow,
   TimeBias,
   UserPreferences,
   WeekdayKey,
@@ -509,6 +510,54 @@ export function isTimeRangeBlockedForAnyActivity(
   timezone: string,
 ) {
   return getBlockedTimeMatchesForAnyActivity(preferences, startTime, endTime, timezone).length > 0
+}
+
+function getWeekdayKeyFromWindowDay(day: string): WeekdayKey | null {
+  switch (day.toLowerCase().slice(0, 3)) {
+    case 'sun':
+      return 'sun'
+    case 'mon':
+      return 'mon'
+    case 'tue':
+      return 'tue'
+    case 'wed':
+      return 'wed'
+    case 'thu':
+      return 'thu'
+    case 'fri':
+      return 'fri'
+    case 'sat':
+      return 'sat'
+    default:
+      return null
+  }
+}
+
+export function getBlockedTimeMatchesForWindow(
+  preferences: UserPreferences,
+  activity: Activity,
+  window: Pick<TimeWindow, 'day' | 'startTime' | 'endTime'>,
+) {
+  const weekday = getWeekdayKeyFromWindowDay(window.day)
+  if (!weekday) return [] as BlockedTimeRule[]
+
+  const startMinutes = timeStringToMinutes(window.startTime)
+  const endMinutes = timeStringToMinutes(window.endTime)
+
+  return getBlockedTimeRulesForActivity(preferences, activity).filter((rule) => {
+    if (rule.day !== weekday) return false
+    const ruleStart = timeStringToMinutes(rule.startTime)
+    const ruleEnd = timeStringToMinutes(rule.endTime)
+    return startMinutes < ruleEnd && endMinutes > ruleStart
+  })
+}
+
+export function isTimeWindowBlockedForAnyActivity(
+  preferences: UserPreferences,
+  window: Pick<TimeWindow, 'day' | 'startTime' | 'endTime'>,
+) {
+  const activities = Object.keys(preferences.blockedTimeRules) as Activity[]
+  return activities.some((activity) => getBlockedTimeMatchesForWindow(preferences, activity, window).length > 0)
 }
 
 export function formatBlockedTimeRule(rule: BlockedTimeRule) {

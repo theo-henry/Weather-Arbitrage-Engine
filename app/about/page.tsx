@@ -20,10 +20,10 @@ import { Button } from '@/components/ui/button'
 const sections = [
   {
     icon: Zap,
-    title: 'What is Weather Arbitrage?',
-    content: `Weather arbitrage is the practice of exploiting temporal variations in weather conditions to optimize outcomes for specific activities. Instead of asking "What's the weather?" we ask "When does the weather give me an advantage?"
+    title: 'What is Weather Scheduler?',
+    content: `Weather Scheduler helps you use temporal variations in weather conditions to optimize outcomes for specific activities. Instead of asking "What's the weather?" we ask "When does the weather give me an advantage?"
 
-Traditional weather apps provide data: temperature, humidity, wind speed. But raw data doesn't tell you when to run, when to study outdoors, or when to plan that perfect sunset dinner. Weather Arbitrage Engine transforms weather data into actionable intelligence — scoring every 30-minute window across the next 48 hours to find your optimal moment.`,
+Traditional weather apps provide data: temperature, humidity, wind speed. But raw data doesn't tell you when to run, when to study outdoors, or when to plan that perfect sunset dinner. Weather Scheduler transforms weather data into actionable intelligence — scoring every 30-minute window across the next 48 hours to find your optimal moment.`,
   },
   {
     icon: BarChart3,
@@ -43,7 +43,7 @@ All weights are configurable through your preference settings, letting you tune 
   {
     icon: Brain,
     title: 'Personalization (Coming Soon)',
-    content: `The next evolution of Weather Arbitrage Engine will learn from your patterns:
+    content: `The next evolution of Weather Scheduler will learn from your patterns:
 
 • **Activity correlation**: If you consistently feel better running at certain temperatures, we'll adjust your personal comfort curves.
 
@@ -66,7 +66,7 @@ All weights are configurable through your preference settings, letting you tune 
 
 • **Plans saved**: No more rained-out picnics or windswept photos. Plan with confidence.
 
-Weather Arbitrage Engine isn't just about avoiding bad weather — it's about finding the moments where conditions actively work in your favor. It's the difference between surviving the weather and leveraging it.`,
+Weather Scheduler isn't just about avoiding bad weather — it's about finding the moments where conditions actively work in your favor. It's the difference between surviving the weather and leveraging it.`,
   },
 ]
 

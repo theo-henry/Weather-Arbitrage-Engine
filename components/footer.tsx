@@ -35,7 +35,7 @@ export function Footer() {
                   <Zap className="h-5 w-5 text-foreground" />
                 </div>
               </div>
-              <span className="font-semibold">Weather Arbitrage</span>
+              <span className="font-semibold">Weather Scheduler</span>
             </Link>
             <p className="text-sm text-muted-foreground mb-4">
               Find the best time to act — not just the weather.

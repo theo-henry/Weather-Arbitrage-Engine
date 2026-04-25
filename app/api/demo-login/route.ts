@@ -4,7 +4,7 @@ import { buildDemoSeed } from '@/lib/demo-seed'
 import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import type { CalendarEvent } from '@/lib/types'
 
-const DEMO_EMAIL = 'demo@weatherarbitrage.com'
+const DEMO_EMAIL = 'demo@weatherscheduler.com'
 const DEMO_PASSWORD = 'demo2026'
 const SUPABASE_SERVICE_ROLE_ERROR =
   'Demo login is not configured. Set SUPABASE_SERVICE_ROLE_KEY.'

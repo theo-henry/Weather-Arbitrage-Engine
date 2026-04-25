@@ -58,8 +58,7 @@ export function HeroSection() {
           className="text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight mb-6"
         >
           Weather{' '}
-          <span className="edge-gradient-text">Arbitrage</span>{' '}
-          Engine
+          <span className="edge-gradient-text">Scheduler</span>
         </motion.h1>
 
         <motion.p
@@ -68,7 +67,7 @@ export function HeroSection() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="text-lg sm:text-xl text-muted-foreground mb-4 max-w-2xl mx-auto text-balance"
         >
-          Find the best time to act — not just the weather.
+          Ask for a plan, get the best weather-aware time.
         </motion.p>
 
         <motion.p
@@ -77,7 +76,7 @@ export function HeroSection() {
           transition={{ duration: 0.6, delay: 0.3 }}
           className="text-base text-muted-foreground mb-10 max-w-xl mx-auto text-pretty"
         >
-          We analyze the next 48 hours and surface the window where conditions give you an edge.
+          Chat with the scheduler, compare forecast windows against your calendar and preferences, then confirm changes before they apply. Auto-Protect keeps watching for risky weather and suggests safer moves.
         </motion.p>
 
         <motion.div
@@ -89,15 +88,15 @@ export function HeroSection() {
           <Link href="/dashboard">
             <Button size="lg" className="group relative overflow-hidden w-full sm:w-auto">
               <span className="relative z-10 flex items-center gap-2">
-                Try the Engine
+                Open Dashboard
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </span>
               <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-violet-500 to-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
             </Button>
           </Link>
-          <Link href="/scheduler">
+          <Link href="/compare">
             <Button variant="outline" size="lg" className="w-full sm:w-auto">
-              Open Scheduler
+              Compare Times
             </Button>
           </Link>
         </motion.div>
