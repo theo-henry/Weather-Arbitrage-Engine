@@ -56,11 +56,15 @@ function buildExactTimeGuidance(hints: LatestUserMessageHints | null) {
 function buildPreferencesSummary(request: AssistantRequest) {
   const profile = getActivityProfile(request.preferences, request.preferences.activity)
   const blockedRules = request.preferences.blockedTimeRules[request.preferences.activity] ?? []
+  const blockedRuleCounts = Object.entries(request.preferences.blockedTimeRules)
+    .map(([activity, rules]) => `${activity}: ${rules.length}`)
+    .join(', ')
 
   const lines = [
     `Selected activity preference: ${request.preferences.activity}.`,
     `Preferred city: ${request.preferences.city}.`,
     `Usual time: ${request.preferences.usualTime}.`,
+    `Blocked scheduling window counts by activity: ${blockedRuleCounts}.`,
   ]
 
   if (profile.comfort) {
@@ -112,6 +116,9 @@ function buildSystemInstruction(request: AssistantRequest) {
     'If multiple events match, ask a brief clarification question instead of guessing.',
     'Default to conflict-free scheduling. If a tool reports a conflict, explain it and do not draft a conflicting write unless the user explicitly asks to replace something.',
     'Blocked scheduling windows in account settings are hard constraints for assistant recommendations and draft scheduling actions.',
+    'Before recommending, scoring, creating, or updating an event, use the scheduling tools so blocked-window and preference checks are applied.',
+    'Never propose, recommend, draft, or confirm any event time that a tool reports as blockedByPreferences, blocked_preference, or overlapping blockedRules.',
+    'If a requested time overlaps a blocked scheduling window, explain that it is blocked and ask for a different time or use find_optimal_slots to offer unblocked alternatives.',
     'Weather comfort settings must influence any recommended time blocks.',
     'If the user asks about settings or wants to change them, use the account settings tools instead of describing imaginary settings.',
     'Preference changes apply immediately and are not confirmation-gated like calendar drafts.',
@@ -135,6 +142,8 @@ function buildSystemInstruction(request: AssistantRequest) {
     'Never invent event ids, event times, scores, or weather details.',
     'Always use the user timezone when referencing times.',
     'Default to conflict-free recommendations and respect blocked scheduling windows.',
+    'Before making recommendations, use find_optimal_slots or another tool that applies preference checks.',
+    'Never recommend any slot that a tool reports as blockedByPreferences, blocked_preference, or overlapping blockedRules.',
     'Weather comfort settings must influence any recommended time blocks.',
     'Keep replies concise, helpful, and in plain text.',
     buildCompareModeInstruction(),

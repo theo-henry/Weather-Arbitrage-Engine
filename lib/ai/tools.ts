@@ -2,8 +2,10 @@ import { addDays } from 'date-fns'
 import {
   formatBlockedTimeRule,
   getActivityProfile,
+  getBlockedTimeMatchesForAnyActivity,
   getBlockedTimeMatches,
   isTimeRangeBlocked,
+  isTimeRangeBlockedForAnyActivity,
   normalizeUserPreferences,
   removeBlockedTimeRule,
   upsertBlockedTimeRule,
@@ -265,12 +267,19 @@ function isActivity(value: unknown): value is Activity {
   )
 }
 
+function resolveSchedulingActivity(activity: unknown, context: ToolContext): Activity {
+  return isActivity(activity) ? activity : context.preferences.activity
+}
+
 function isWeekday(value: unknown): value is WeekdayKey {
   return typeof value === 'string' && ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].includes(value)
 }
 
-function isTimeString(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value)
+function isTimeString(value: unknown, allowEndOfDay = false): value is string {
+  if (typeof value !== 'string' || !/^\d{2}:\d{2}$/.test(value)) return false
+  const [hours, minutes] = value.split(':').map(Number)
+  if (hours === 24) return allowEndOfDay && minutes === 0
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59
 }
 
 function getSettingsSnapshot(preferences: UserPreferences, activity: Activity = preferences.activity) {
@@ -319,6 +328,29 @@ function buildBlockedPreferenceMessage(
   }
 }
 
+function buildAnyBlockedPreferenceMessage(
+  preferences: UserPreferences,
+  startTime: Date,
+  endTime: Date,
+  timezone: string,
+) {
+  const matches = getBlockedTimeMatchesForAnyActivity(preferences, startTime, endTime, timezone)
+  if (matches.length === 0) return null
+
+  return {
+    status: 'blocked_preference',
+    message: 'That time falls inside your blocked scheduling windows.',
+    blockedRules: matches.map(({ activity, rule }) => ({
+      activity,
+      id: rule.id,
+      label: `${activity}: ${formatBlockedTimeRule(rule)}`,
+      day: rule.day,
+      startTime: rule.startTime,
+      endTime: rule.endTime,
+    })),
+  }
+}
+
 function getToolDeclarations(): LLMToolDefinition[] {
   return [
     {
@@ -349,7 +381,8 @@ function getToolDeclarations(): LLMToolDefinition[] {
     },
     {
       name: 'get_weather_summary',
-      description: 'Summarize weather and optional activity suitability for a given time range or part of the day.',
+      description:
+        'Summarize weather and optional activity suitability for a given time range or part of the day. Activity bestWindow results exclude blocked scheduling windows.',
       parameters: {
         type: 'object',
         properties: {
@@ -364,7 +397,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
     {
       name: 'find_optimal_slots',
       description:
-        'Find the best conflict-free weather windows for a requested activity and duration when the user asks for the best time or wants alternatives. Do not use this to silently override an explicitly requested clock time.',
+        'Find the best conflict-free and preference-safe weather windows for a requested activity and duration when the user asks for the best time or wants alternatives. This never returns slots that overlap blocked scheduling windows. Do not use this to silently override an explicitly requested clock time.',
       parameters: {
         type: 'object',
         properties: {
@@ -486,7 +519,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
     {
       name: 'draft_create_event',
       description:
-        'Draft a new calendar event proposal. This does not apply the change. If the user gave an explicit time, preserve that requested time unless there is a conflict or the user asked for a better slot.',
+        'Draft a new calendar event proposal. This does not apply the change. The tool rejects drafts that overlap blocked scheduling windows. If the user gave an explicit time, preserve that requested time unless there is a conflict, blocked preference, or the user asked for a better slot.',
       parameters: {
         type: 'object',
         properties: {
@@ -506,7 +539,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
     {
       name: 'draft_update_event',
       description:
-        'Draft an update to an existing calendar event. This does not apply the change. If the user gave an explicit new time, preserve it unless there is a conflict or the user asked for a better slot.',
+        'Draft an update to an existing calendar event. This does not apply the change. The tool rejects updates that overlap blocked scheduling windows. If the user gave an explicit new time, preserve it unless there is a conflict, blocked preference, or the user asked for a better slot.',
       parameters: {
         type: 'object',
         properties: {
@@ -600,9 +633,26 @@ function executeFindEvents(args: Record<string, unknown>, context: ToolContext):
 
 function executeGetWeatherSummary(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
   let relevantWindows: TimeWindow[] = []
+  const activity = isScorableActivity(args.activity) ? args.activity : null
 
   if (typeof args.start_time === 'string' && typeof args.end_time === 'string') {
-    relevantWindows = getOverlappingWindows(new Date(args.start_time), new Date(args.end_time), context.windows)
+    const startTime = new Date(args.start_time)
+    const endTime = new Date(args.end_time)
+    relevantWindows = getOverlappingWindows(startTime, endTime, context.windows)
+    const blocked = activity
+      ? buildAnyBlockedPreferenceMessage(context.preferences, startTime, endTime, context.timezone)
+      : null
+
+    return {
+      response: {
+        windowCount: relevantWindows.length,
+        summary: summarizeWeather(relevantWindows),
+        averageScore: activity ? getAverageScore(relevantWindows, activity) : null,
+        blockedByPreferences: !!blocked,
+        blockedRules: blocked?.blockedRules ?? [],
+        bestWindow: null,
+      },
+    }
   } else {
     const relativeDayKey = resolveRelativeDay(args.relative_day as RelativeDay | undefined, context.now, context.timezone)
     const preferredTime = (args.preferred_time as PreferredTime | undefined) || 'any'
@@ -613,11 +663,18 @@ function executeGetWeatherSummary(args: Record<string, unknown>, context: ToolCo
     })
   }
 
-  const activity = isScorableActivity(args.activity) ? args.activity : null
   const averageScore = activity ? getAverageScore(relevantWindows, activity) : null
+  const unblockedWindows = activity
+    ? relevantWindows.filter((window) => {
+        const windowStart = getWindowStart(window)
+        const windowEnd = getWindowEnd(window)
+        return !isTimeRangeBlockedForAnyActivity(context.preferences, windowStart, windowEnd, context.timezone)
+      })
+    : relevantWindows
+  const blockedByPreferencesCount = relevantWindows.length - unblockedWindows.length
   const bestWindow =
-    activity && relevantWindows.length > 0
-      ? [...relevantWindows].sort((a, b) => b.scores[activity] - a.scores[activity])[0]
+    activity && unblockedWindows.length > 0
+      ? [...unblockedWindows].sort((a, b) => b.scores[activity] - a.scores[activity])[0]
       : null
 
   return {
@@ -625,6 +682,7 @@ function executeGetWeatherSummary(args: Record<string, unknown>, context: ToolCo
       windowCount: relevantWindows.length,
       summary: summarizeWeather(relevantWindows),
       averageScore,
+      blockedByPreferencesCount,
       bestWindow: bestWindow
         ? {
             startTime: getWindowStart(bestWindow).toISOString(),
@@ -678,7 +736,7 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
       const block = sorted.slice(index, index + requiredSlots)
       const blockStart = getWindowStart(block[0])
       const blockEnd = getWindowEnd(block[block.length - 1])
-      if (isTimeRangeBlocked(context.preferences, args.activity, blockStart, blockEnd, context.timezone)) {
+      if (isTimeRangeBlockedForAnyActivity(context.preferences, blockStart, blockEnd, context.timezone)) {
         blockedByPreferencesCount += 1
         continue
       }
@@ -935,7 +993,7 @@ function executeUpdateAccountSettings(args: Record<string, unknown>, context: To
         item &&
         isWeekday((item as Record<string, unknown>).day) &&
         isTimeString((item as Record<string, unknown>).start_time) &&
-        isTimeString((item as Record<string, unknown>).end_time)
+        isTimeString((item as Record<string, unknown>).end_time, true)
       ) {
         const ruleDay = (item as Record<string, unknown>).day as WeekdayKey
         const startTime = (item as Record<string, unknown>).start_time as string
@@ -969,7 +1027,7 @@ function executeUpdateAccountSettings(args: Record<string, unknown>, context: To
         id: typeof entry.id === 'string' ? entry.id : '',
         day: isWeekday(entry.day) ? entry.day : 'mon',
         startTime: isTimeString(entry.start_time) ? entry.start_time : '',
-        endTime: isTimeString(entry.end_time) ? entry.end_time : '',
+        endTime: isTimeString(entry.end_time, true) ? entry.end_time : '',
       })
     }
 
@@ -1008,12 +1066,11 @@ function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolCon
     return { response: { status: 'invalid_time_range', message: 'The event end time must be after the start time.' } }
   }
 
-  const activity = typeof args.activity === 'string' ? (args.activity as Activity) : undefined
-  if (activity) {
-    const blocked = buildBlockedPreferenceMessage(context.preferences, activity, startTime, endTime, context.timezone)
-    if (blocked) {
-      return { response: blocked }
-    }
+  const eventActivity = isActivity(args.activity) ? args.activity : undefined
+  const schedulingActivity = resolveSchedulingActivity(args.activity, context)
+  const blocked = buildBlockedPreferenceMessage(context.preferences, schedulingActivity, startTime, endTime, context.timezone)
+  if (blocked) {
+    return { response: blocked }
   }
 
   const conflicts = getConflictingEvents(startTime, endTime, context.events, context.timezone)
@@ -1028,8 +1085,8 @@ function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolCon
     }
   }
 
-  const category = coerceCategory(activity, args.category as EventCategory | undefined)
-  const color = coerceColor(activity, args.color as EventColor | undefined)
+  const category = coerceCategory(eventActivity, args.category as EventCategory | undefined)
+  const color = coerceColor(eventActivity, args.color as EventColor | undefined)
   const participants = sanitizeParticipants(args.participants)
   const eventDraft: Omit<CalendarEvent, 'id'> = {
     title: String(args.title),
@@ -1038,7 +1095,7 @@ function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolCon
     category,
     color,
     createdVia: 'chat',
-    ...(activity ? { activity } : {}),
+    ...(eventActivity ? { activity: eventActivity } : {}),
     ...(typeof args.location === 'string' && args.location ? { location: args.location } : {}),
     ...(participants ? { participants } : {}),
     ...(typeof args.notes === 'string' && args.notes ? { notes: args.notes } : {}),
@@ -1102,19 +1159,18 @@ function executeDraftUpdateEvent(args: Record<string, unknown>, context: ToolCon
     return { response: { status: 'invalid_time_range', message: 'The event end time must be after the start time.' } }
   }
 
-  if (nextEvent.activity) {
-    const blocked = buildBlockedPreferenceMessage(
-      context.preferences,
-      nextEvent.activity,
-      new Date(nextEvent.startTime),
-      new Date(nextEvent.endTime),
-      context.timezone,
-    )
-    if (blocked) {
-      return {
-        response: blocked,
-        referencedEventIds: [existingEvent.id],
-      }
+  const schedulingActivity = nextEvent.activity ?? context.preferences.activity
+  const blocked = buildBlockedPreferenceMessage(
+    context.preferences,
+    schedulingActivity,
+    new Date(nextEvent.startTime),
+    new Date(nextEvent.endTime),
+    context.timezone,
+  )
+  if (blocked) {
+    return {
+      response: blocked,
+      referencedEventIds: [existingEvent.id],
     }
   }
 

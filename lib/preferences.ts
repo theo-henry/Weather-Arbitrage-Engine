@@ -112,9 +112,10 @@ function isWeekday(value: unknown): value is WeekdayKey {
   return typeof value === 'string' && WEEKDAY_SORT_ORDER.includes(value as WeekdayKey)
 }
 
-function isTimeString(value: unknown): value is string {
+function isTimeString(value: unknown, allowEndOfDay = false): value is string {
   if (typeof value !== 'string' || !TIME_PATTERN.test(value)) return false
   const [hours, minutes] = value.split(':').map(Number)
+  if (hours === 24) return allowEndOfDay && minutes === 0
   return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59
 }
 
@@ -260,7 +261,12 @@ function normalizeBlockedTimeRules(value: unknown): BlockedTimeRule[] {
 
   const normalized = value
     .map((item) => {
-      if (!isRecord(item) || !isWeekday(item.day) || !isTimeString(item.startTime) || !isTimeString(item.endTime)) {
+      if (
+        !isRecord(item) ||
+        !isWeekday(item.day) ||
+        !isTimeString(item.startTime) ||
+        !isTimeString(item.endTime, true)
+      ) {
         return null
       }
 
@@ -434,6 +440,15 @@ function getLocalTimeString(date: Date, timezone: string) {
   }).format(date)
 }
 
+function getLocalDateKey(date: Date, timezone: string) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 export function getBlockedTimeRulesForActivity(preferences: UserPreferences, activity: Activity) {
   return preferences.blockedTimeRules[activity] ?? []
 }
@@ -448,8 +463,11 @@ export function getBlockedTimeMatches(
   if (!(startTime < endTime)) return [] as BlockedTimeRule[]
 
   const weekday = getWeekdayKey(startTime, timezone)
+  const startDateKey = getLocalDateKey(startTime, timezone)
+  const endDateKey = getLocalDateKey(endTime, timezone)
   const startMinutes = timeStringToMinutes(getLocalTimeString(startTime, timezone))
-  const endMinutes = timeStringToMinutes(getLocalTimeString(endTime, timezone))
+  const rawEndMinutes = timeStringToMinutes(getLocalTimeString(endTime, timezone))
+  const endMinutes = endDateKey !== startDateKey && rawEndMinutes <= startMinutes ? 24 * 60 : rawEndMinutes
 
   return getBlockedTimeRulesForActivity(preferences, activity).filter((rule) => {
     if (rule.day !== weekday) return false
@@ -467,6 +485,30 @@ export function isTimeRangeBlocked(
   timezone: string,
 ) {
   return getBlockedTimeMatches(preferences, activity, startTime, endTime, timezone).length > 0
+}
+
+export function getBlockedTimeMatchesForAnyActivity(
+  preferences: UserPreferences,
+  startTime: Date,
+  endTime: Date,
+  timezone: string,
+) {
+  const activities = Object.keys(preferences.blockedTimeRules) as Activity[]
+  return activities.flatMap((activity) =>
+    getBlockedTimeMatches(preferences, activity, startTime, endTime, timezone).map((rule) => ({
+      activity,
+      rule,
+    })),
+  )
+}
+
+export function isTimeRangeBlockedForAnyActivity(
+  preferences: UserPreferences,
+  startTime: Date,
+  endTime: Date,
+  timezone: string,
+) {
+  return getBlockedTimeMatchesForAnyActivity(preferences, startTime, endTime, timezone).length > 0
 }
 
 export function formatBlockedTimeRule(rule: BlockedTimeRule) {

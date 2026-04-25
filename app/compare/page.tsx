@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { CalendarStoreProvider, useCalendarStore } from '@/hooks/use-calendar-store'
 import { usePreferences } from '@/hooks/use-preferences'
 import { useWeatherData } from '@/hooks/use-weather-data'
+import { isTimeRangeBlockedForAnyActivity } from '@/lib/preferences'
 import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import type {
   Activity,
@@ -22,6 +23,7 @@ import type {
   CompareRecommendation,
   PendingCalendarOperation,
   TimeWindow,
+  UserPreferences,
 } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -102,12 +104,40 @@ function getWindowEnd(window: TimeWindow): Date {
   return date
 }
 
-function recommendationToWindows(recommendation: CompareRecommendation | null, windows: TimeWindow[]) {
+function formatLocalTime(date: Date, timezone: string) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+function recommendationToWindows(
+  recommendation: CompareRecommendation | null,
+  windows: TimeWindow[],
+  preferences: UserPreferences,
+  timezone: string,
+) {
   if (!recommendation?.slots.length) return []
   const byId = new Map(windows.map((window) => [window.id, window]))
+  const activity = recommendation.scoredActivity
 
   return recommendation.slots
-    .map((slot) => slot.windowIds.map((id) => byId.get(id)).find((window): window is TimeWindow => !!window))
+    .map((slot) => {
+      const window = slot.windowIds.map((id) => byId.get(id)).find((item): item is TimeWindow => !!item)
+      if (!window || !activity) return null
+
+      const startTime = new Date(slot.startTime)
+      const endTime = new Date(slot.endTime)
+      if (isTimeRangeBlockedForAnyActivity(preferences, startTime, endTime, timezone)) return null
+
+      return {
+        ...window,
+        startTime: formatLocalTime(startTime, timezone),
+        endTime: formatLocalTime(endTime, timezone),
+      }
+    })
     .filter((window): window is TimeWindow => !!window)
 }
 
@@ -162,6 +192,7 @@ function CompareContent() {
   const [isScheduling, setIsScheduling] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -169,7 +200,10 @@ function CompareContent() {
     }
   }, [messages, isTyping])
 
-  const topWindows = useMemo(() => recommendationToWindows(recommendation, windows), [recommendation, windows])
+  const topWindows = useMemo(
+    () => recommendationToWindows(recommendation, windows, preferences, timezone),
+    [recommendation, preferences, timezone, windows],
+  )
   const scoredActivity = recommendation?.scoredActivity
 
   const applyPendingOperations = (operations: PendingCalendarOperation[]) => {
@@ -217,7 +251,7 @@ function CompareContent() {
         city: preferences.city,
         preferences,
         now: new Date().toISOString(),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezone,
         pendingOperations: activePendingOperations,
       }
 
@@ -309,6 +343,18 @@ function CompareContent() {
 
   const handleSelectSlot = (window: TimeWindow) => {
     if (!scoredActivity || isScheduling) return
+    const slot = recommendation?.slots.find((candidate) => candidate.windowIds.includes(window.id))
+    const startTime = slot?.startTime ? new Date(slot.startTime) : getWindowStart(window)
+    const endTime = slot?.endTime ? new Date(slot.endTime) : getWindowEnd(window)
+    if (isTimeRangeBlockedForAnyActivity(preferences, startTime, endTime, timezone)) {
+      setMessages((prev) => [
+        ...prev,
+        createMessage('assistant', 'That slot is now blocked in your preferences, so I did not add it. Ask me for another option and I’ll only show unblocked times.'),
+      ])
+      setRecommendation(null)
+      return
+    }
+
     setIsScheduling(true)
 
     const eventId =
