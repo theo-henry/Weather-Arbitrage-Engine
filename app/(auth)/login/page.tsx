@@ -63,7 +63,19 @@ function LoginForm() {
       return
     }
 
-    await handleLogin('demo@weatherscheduler.com', 'demo2026')
+    const success = await handleLogin('demo@weatherscheduler.com', 'demo2026')
+    if (!success) {
+      // If login failed, try resetting the demo user
+      const resetRes = await fetch('/api/demo-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset: true })
+      })
+      if (resetRes.ok) {
+        // Try login again after reset
+        await handleLogin('demo@weatherscheduler.com', 'demo2026')
+      }
+    }
     setDemoLoading(false)
   }
 

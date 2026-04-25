@@ -64,6 +64,16 @@ export async function POST(request: Request) {
     }
 
     demoUser = createdUserData.user
+  } else if (forceReseed) {
+    // Update the demo user's password if reset is requested
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(demoUser.id, {
+      password: DEMO_PASSWORD,
+      email_confirm: true,
+    })
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
   }
 
   if (!demoUser) {
