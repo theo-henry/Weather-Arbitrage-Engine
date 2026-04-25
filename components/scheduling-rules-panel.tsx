@@ -23,6 +23,8 @@ interface SchedulingRulesPanelProps {
   onPreferencesChange: (preferences: UserPreferences) => void
 }
 
+const ACTIVITIES: Activity[] = ['run', 'study', 'social', 'flight', 'photo', 'custom']
+
 const WEEKDAY_OPTIONS: Array<{ value: WeekdayKey; label: string }> = [
   { value: 'mon', label: 'Monday' },
   { value: 'tue', label: 'Tuesday' },
@@ -33,13 +35,13 @@ const WEEKDAY_OPTIONS: Array<{ value: WeekdayKey; label: string }> = [
   { value: 'sun', label: 'Sunday' },
 ]
 
-const TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+const TIME_OPTIONS = Array.from({ length: 49 }, (_, index) => {
   const hours = Math.floor(index / 2)
   const minutes = index % 2 === 0 ? '00' : '30'
   return `${hours.toString().padStart(2, '0')}:${minutes}`
 })
 
-const GRID_START_HOUR = 5
+const GRID_START_HOUR = 0
 const GRID_END_HOUR = 24
 const SLOT_MINUTES = 30
 const GRID_SLOTS = Array.from({ length: ((GRID_END_HOUR - GRID_START_HOUR) * 60) / SLOT_MINUTES }, (_, index) => {
@@ -53,29 +55,42 @@ const GRID_SLOTS = Array.from({ length: ((GRID_END_HOUR - GRID_START_HOUR) * 60)
 })
 
 type CellIntent = 'block' | 'unblock'
+type ActivityScope = Activity | 'all'
 
 export function SchedulingRulesPanel({
   preferences,
   onPreferencesChange,
 }: SchedulingRulesPanelProps) {
-  const [activity, setActivity] = useState<Activity>(preferences.activity)
+  const [activityScope, setActivityScope] = useState<ActivityScope>(preferences.activity)
   const [day, setDay] = useState<WeekdayKey>('mon')
   const [startTime, setStartTime] = useState('07:00')
   const [endTime, setEndTime] = useState('09:00')
   const dragIntent = useRef<CellIntent | null>(null)
   const dragCells = useRef<Set<string> | null>(null)
+  const dragCellsByActivity = useRef<Record<Activity, Set<string>> | null>(null)
   const touchedDuringDrag = useRef<Set<string>>(new Set())
 
   useEffect(() => {
-    setActivity(preferences.activity)
+    setActivityScope((current) => (current === 'all' ? current : preferences.activity))
   }, [preferences.activity])
 
-  const rules = useMemo(() => preferences.blockedTimeRules[activity] ?? [], [activity, preferences.blockedTimeRules])
+  const rules = useMemo(
+    () => (activityScope === 'all' ? [] : preferences.blockedTimeRules[activityScope] ?? []),
+    [activityScope, preferences.blockedTimeRules],
+  )
+  const allActivityRules = useMemo(
+    () => ACTIVITIES.flatMap((activity) => (preferences.blockedTimeRules[activity] ?? []).map((rule) => ({ activity, rule }))),
+    [preferences.blockedTimeRules],
+  )
   const isTimeRangeValid = startTime < endTime
-  const blockedCells = useMemo(() => rulesToBlockedCells(rules), [rules])
+  const { blockedCells, partiallyBlockedCells } = useMemo(
+    () => getBlockedCellCoverage(preferences, activityScope),
+    [activityScope, preferences],
+  )
   const allWeekRangeLabel = `${startTime}-${endTime}`
+  const scopeLabel = activityScope === 'all' ? 'all activities' : activityScope
 
-  const updateRules = (nextRules: BlockedTimeRule[]) => {
+  const updateRulesForActivity = (activity: Activity, nextRules: BlockedTimeRule[]) => {
     onPreferencesChange({
       ...preferences,
       blockedTimeRules: {
@@ -85,37 +100,81 @@ export function SchedulingRulesPanel({
     })
   }
 
+  const updateRulesForScope = (buildNextRules: (activity: Activity, currentRules: BlockedTimeRule[]) => BlockedTimeRule[]) => {
+    const targetActivities = activityScope === 'all' ? ACTIVITIES : [activityScope]
+    const nextBlockedTimeRules = { ...preferences.blockedTimeRules }
+
+    for (const activity of targetActivities) {
+      nextBlockedTimeRules[activity] = buildNextRules(activity, nextBlockedTimeRules[activity] ?? [])
+    }
+
+    onPreferencesChange({
+      ...preferences,
+      blockedTimeRules: nextBlockedTimeRules,
+    })
+  }
+
   const handleAddRule = () => {
     if (!isTimeRangeValid) return
-    updateRules(upsertBlockedTimeRule(rules, { day, startTime, endTime }))
+    updateRulesForScope((_, currentRules) => upsertBlockedTimeRule(currentRules, { day, startTime, endTime }))
   }
 
   const handleAddAllWeekRule = () => {
     if (!isTimeRangeValid) return
 
-    const nextRules = WEEKDAY_OPTIONS.reduce(
-      (currentRules, option) => upsertBlockedTimeRule(currentRules, {
-        day: option.value,
-        startTime,
-        endTime,
-      }),
-      rules,
+    updateRulesForScope((_, currentRules) =>
+      WEEKDAY_OPTIONS.reduce(
+        (nextRules, option) => upsertBlockedTimeRule(nextRules, {
+          day: option.value,
+          startTime,
+          endTime,
+        }),
+        currentRules,
+      ),
     )
-
-    updateRules(nextRules)
   }
 
-  const handleRemoveRule = (rule: BlockedTimeRule) => {
-    updateRules(removeBlockedTimeRule(rules, rule))
+  const handleRemoveRule = (rule: BlockedTimeRule, targetActivity: Activity) => {
+    updateRulesForActivity(targetActivity, removeBlockedTimeRule(preferences.blockedTimeRules[targetActivity] ?? [], rule))
   }
 
   const updateGridCell = (nextCells: Set<string>) => {
-    updateRules(blockedCellsToRules(nextCells))
+    if (activityScope === 'all') return
+    updateRulesForActivity(activityScope, blockedCellsToRules(nextCells))
+  }
+
+  const updateAllActivityGridCell = (cellKey: string, intent: CellIntent) => {
+    const cellsByActivity = dragCellsByActivity.current ?? buildCellsByActivity(preferences)
+
+    for (const activity of ACTIVITIES) {
+      if (intent === 'block') {
+        cellsByActivity[activity].add(cellKey)
+      } else {
+        cellsByActivity[activity].delete(cellKey)
+      }
+    }
+
+    dragCellsByActivity.current = cellsByActivity
+    onPreferencesChange({
+      ...preferences,
+      blockedTimeRules: ACTIVITIES.reduce(
+        (nextRules, activity) => ({
+          ...nextRules,
+          [activity]: blockedCellsToRules(cellsByActivity[activity]),
+        }),
+        { ...preferences.blockedTimeRules },
+      ),
+    })
   }
 
   const applyCellIntent = (cellKey: string, intent: CellIntent) => {
     if (touchedDuringDrag.current.has(cellKey)) return
     touchedDuringDrag.current.add(cellKey)
+
+    if (activityScope === 'all') {
+      updateAllActivityGridCell(cellKey, intent)
+      return
+    }
 
     const nextCells = dragCells.current ?? new Set(blockedCells)
     if (intent === 'block') {
@@ -131,7 +190,13 @@ export function SchedulingRulesPanel({
   const handleCellPointerDown = (cellKey: string, isBlocked: boolean) => {
     const intent: CellIntent = isBlocked ? 'unblock' : 'block'
     dragIntent.current = intent
-    dragCells.current = new Set(blockedCells)
+    if (activityScope === 'all') {
+      dragCellsByActivity.current = buildCellsByActivity(preferences)
+      dragCells.current = null
+    } else {
+      dragCells.current = new Set(blockedCells)
+      dragCellsByActivity.current = null
+    }
     touchedDuringDrag.current = new Set()
     applyCellIntent(cellKey, intent)
   }
@@ -144,6 +209,7 @@ export function SchedulingRulesPanel({
   const stopDrag = () => {
     dragIntent.current = null
     dragCells.current = null
+    dragCellsByActivity.current = null
     touchedDuringDrag.current = new Set()
   }
 
@@ -162,7 +228,7 @@ export function SchedulingRulesPanel({
             <Label className="mb-3 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Activity
             </Label>
-            <ActivitySelector selected={activity} onSelect={setActivity} size="sm" />
+            <ActivityScopeSelector selected={activityScope} onSelect={setActivityScope} />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -217,6 +283,7 @@ export function SchedulingRulesPanel({
 
           <WeeklyBlockGrid
             blockedCells={blockedCells}
+            partiallyBlockedCells={partiallyBlockedCells}
             onCellPointerDown={handleCellPointerDown}
             onCellPointerEnter={handleCellPointerEnter}
           />
@@ -246,6 +313,7 @@ export function SchedulingRulesPanel({
                 Block {allWeekRangeLabel} all week
               </Button>
             </div>
+            <p className="mt-3 text-xs text-muted-foreground">Applies to {scopeLabel}.</p>
           </div>
         </CardContent>
       </Card>
@@ -253,15 +321,19 @@ export function SchedulingRulesPanel({
       <div className="space-y-3">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">Current rules for {activity}</p>
-            <Badge variant="secondary">{rules.length}</Badge>
+            <p className="text-sm font-medium">
+              Current rules for {activityScope === 'all' ? 'all activities' : activityScope}
+            </p>
+            <Badge variant="secondary">{activityScope === 'all' ? allActivityRules.length : rules.length}</Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            Weekly recurring windows. Switch activities above to inspect a different activity profile.
+            Weekly recurring windows. Select one activity to inspect it, or All activities to bulk-edit every profile.
           </p>
         </div>
 
-        {rules.length === 0 ? (
+        {activityScope === 'all' ? (
+          <AllActivityRulesList rules={allActivityRules} onRemoveRule={handleRemoveRule} />
+        ) : rules.length === 0 ? (
           <Card className="border-dashed border-border/60 bg-transparent shadow-none">
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               No blocked windows for this activity yet.
@@ -274,12 +346,12 @@ export function SchedulingRulesPanel({
                 <CardContent className="flex items-center justify-between gap-4 py-4">
                   <div>
                     <p className="text-sm font-medium">{formatBlockedTimeRule(rule)}</p>
-                    <p className="text-xs text-muted-foreground">Applied every week for {activity} scheduling.</p>
+                    <p className="text-xs text-muted-foreground">Applied every week for {activityScope} scheduling.</p>
                   </div>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleRemoveRule(rule)}
+                    onClick={() => handleRemoveRule(rule, activityScope)}
                     aria-label={`Remove ${formatBlockedTimeRule(rule)}`}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -294,12 +366,85 @@ export function SchedulingRulesPanel({
   )
 }
 
+function ActivityScopeSelector({
+  selected,
+  onSelect,
+}: {
+  selected: ActivityScope
+  onSelect: (activityScope: ActivityScope) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <Button
+        type="button"
+        variant={selected === 'all' ? 'default' : 'outline'}
+        className="w-full justify-start"
+        onClick={() => onSelect('all')}
+      >
+        All activities
+      </Button>
+      <ActivitySelector
+        selected={selected === 'all' ? null : selected}
+        onSelect={onSelect}
+        size="sm"
+        className={cn(selected === 'all' && 'opacity-75')}
+      />
+    </div>
+  )
+}
+
+function AllActivityRulesList({
+  rules,
+  onRemoveRule,
+}: {
+  rules: Array<{ activity: Activity; rule: BlockedTimeRule }>
+  onRemoveRule: (rule: BlockedTimeRule, activity: Activity) => void
+}) {
+  if (rules.length === 0) {
+    return (
+      <Card className="border-dashed border-border/60 bg-transparent shadow-none">
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          No blocked windows for any activity yet.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {rules.map(({ activity, rule }) => (
+        <Card key={`${activity}-${rule.id}`} className="border-border/60 shadow-none">
+          <CardContent className="flex items-center justify-between gap-4 py-4">
+            <div>
+              <div className="mb-1 flex items-center gap-2">
+                <Badge variant="outline" className="capitalize">{activity}</Badge>
+                <p className="text-sm font-medium">{formatBlockedTimeRule(rule)}</p>
+              </div>
+              <p className="text-xs text-muted-foreground">Applied every week for {activity} scheduling.</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onRemoveRule(rule, activity)}
+              aria-label={`Remove ${formatBlockedTimeRule(rule)} for ${activity}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 function WeeklyBlockGrid({
   blockedCells,
+  partiallyBlockedCells,
   onCellPointerDown,
   onCellPointerEnter,
 }: {
   blockedCells: Set<string>
+  partiallyBlockedCells: Set<string>
   onCellPointerDown: (cellKey: string, isBlocked: boolean) => void
   onCellPointerEnter: (cellKey: string) => void
 }) {
@@ -315,6 +460,12 @@ function WeeklyBlockGrid({
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="h-3 w-3 rounded-sm border border-red-500/60 bg-red-500/80" />
           Blocked
+          {partiallyBlockedCells.size > 0 && (
+            <>
+              <span className="ml-2 h-3 w-3 rounded-sm border border-amber-500/50 bg-amber-500/40" />
+              Some activities
+            </>
+          )}
         </div>
       </div>
 
@@ -336,6 +487,7 @@ function WeeklyBlockGrid({
                 key={slot.startTime}
                 slot={slot}
                 blockedCells={blockedCells}
+                partiallyBlockedCells={partiallyBlockedCells}
                 onCellPointerDown={onCellPointerDown}
                 onCellPointerEnter={onCellPointerEnter}
               />
@@ -350,11 +502,13 @@ function WeeklyBlockGrid({
 function TimeSlotRow({
   slot,
   blockedCells,
+  partiallyBlockedCells,
   onCellPointerDown,
   onCellPointerEnter,
 }: {
   slot: (typeof GRID_SLOTS)[number]
   blockedCells: Set<string>
+  partiallyBlockedCells: Set<string>
   onCellPointerDown: (cellKey: string, isBlocked: boolean) => void
   onCellPointerEnter: (cellKey: string) => void
 }) {
@@ -373,6 +527,7 @@ function TimeSlotRow({
       {WEEKDAY_OPTIONS.map((dayOption) => {
         const cellKey = buildCellKey(dayOption.value, slot.index)
         const isBlocked = blockedCells.has(cellKey)
+        const isPartiallyBlocked = partiallyBlockedCells.has(cellKey)
 
         return (
           <button
@@ -385,6 +540,8 @@ function TimeSlotRow({
               isHour ? 'border-t-border/70' : 'border-t-border/35',
               isBlocked
                 ? 'bg-red-500/80 hover:bg-red-500 dark:bg-red-500/70 dark:hover:bg-red-500'
+                : isPartiallyBlocked
+                  ? 'bg-amber-500/35 hover:bg-red-500/25'
                 : 'bg-background hover:bg-red-500/15',
             )}
             onPointerDown={(event) => {
@@ -420,7 +577,10 @@ function minutesToTimeString(totalMinutes: number) {
 function rulesToBlockedCells(rules: BlockedTimeRule[]) {
   const cells = new Set<string>()
   for (const rule of rules) {
-    const startSlot = Math.max(0, Math.floor((timeStringToMinutes(rule.startTime) - GRID_START_HOUR * 60) / SLOT_MINUTES))
+    const startSlot = Math.max(
+      0,
+      Math.floor((timeStringToMinutes(rule.startTime) - GRID_START_HOUR * 60) / SLOT_MINUTES),
+    )
     const endSlot = Math.min(
       GRID_SLOTS.length,
       Math.ceil((timeStringToMinutes(rule.endTime) - GRID_START_HOUR * 60) / SLOT_MINUTES),
@@ -431,6 +591,44 @@ function rulesToBlockedCells(rules: BlockedTimeRule[]) {
     }
   }
   return cells
+}
+
+function buildCellsByActivity(preferences: UserPreferences) {
+  return ACTIVITIES.reduce(
+    (cellsByActivity, activity) => ({
+      ...cellsByActivity,
+      [activity]: rulesToBlockedCells(preferences.blockedTimeRules[activity] ?? []),
+    }),
+    {} as Record<Activity, Set<string>>,
+  )
+}
+
+function getBlockedCellCoverage(preferences: UserPreferences, activityScope: ActivityScope) {
+  if (activityScope !== 'all') {
+    return {
+      blockedCells: rulesToBlockedCells(preferences.blockedTimeRules[activityScope] ?? []),
+      partiallyBlockedCells: new Set<string>(),
+    }
+  }
+
+  const cellCounts = new Map<string, number>()
+  for (const activity of ACTIVITIES) {
+    for (const cellKey of rulesToBlockedCells(preferences.blockedTimeRules[activity] ?? [])) {
+      cellCounts.set(cellKey, (cellCounts.get(cellKey) ?? 0) + 1)
+    }
+  }
+
+  const blockedCells = new Set<string>()
+  const partiallyBlockedCells = new Set<string>()
+  for (const [cellKey, count] of cellCounts) {
+    if (count === ACTIVITIES.length) {
+      blockedCells.add(cellKey)
+    } else {
+      partiallyBlockedCells.add(cellKey)
+    }
+  }
+
+  return { blockedCells, partiallyBlockedCells }
 }
 
 function blockedCellsToRules(cells: Set<string>) {

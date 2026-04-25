@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 import type { Activity } from '@/lib/types'
 
 interface ActivitySelectorProps {
-  selected: Activity
+  selected: Activity | null
   onSelect: (activity: Activity) => void
   size?: 'sm' | 'md' | 'lg'
   className?: string
