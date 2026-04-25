@@ -22,7 +22,10 @@ function serializeEvents(userId: string, events: CalendarEvent[]) {
   })
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({}))
+  const forceReseed = (body as Record<string, unknown>)?.reset === true
+
   const env = getSupabasePublicEnv()
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -67,8 +70,8 @@ export async function POST() {
     return NextResponse.json({ error: 'Failed to resolve demo user' }, { status: 500 })
   }
 
+  // Always upsert preferences (idempotent)
   const seed = buildDemoSeed()
-  const serializedEvents = serializeEvents(demoUser.id, seed.events)
 
   const { error: preferencesError } = await supabaseAdmin
     .from('user_preferences')
@@ -85,24 +88,50 @@ export async function POST() {
     return NextResponse.json({ error: preferencesError.message }, { status: 500 })
   }
 
-  const { error: deleteEventsError } = await supabaseAdmin
+  // Only seed events if the user has none, data is stale, or a reset was requested
+  const { count, data: latestEvent } = await supabaseAdmin
     .from('scheduled_events')
-    .delete()
+    .select('id, end_time', { count: 'exact' })
     .eq('user_id', demoUser.id)
+    .order('end_time', { ascending: false })
+    .limit(1)
 
-  if (deleteEventsError) {
-    return NextResponse.json({ error: deleteEventsError.message }, { status: 500 })
-  }
+  // Reseed when all existing events have ended (stale demo data from a previous session)
+  const isStale =
+    count !== null &&
+    count > 0 &&
+    latestEvent?.[0]?.end_time &&
+    new Date(latestEvent[0].end_time) < new Date()
 
-  if (serializedEvents.length > 0) {
-    const { error: insertEventsError } = await supabaseAdmin
-      .from('scheduled_events')
-      .insert(serializedEvents)
+  const shouldSeed = forceReseed || count === null || count === 0 || isStale
 
-    if (insertEventsError) {
-      return NextResponse.json({ error: insertEventsError.message }, { status: 500 })
+  if (shouldSeed) {
+    // Clear existing events before reseeding
+    if ((forceReseed || isStale) && count && count > 0) {
+      const { error: deleteEventsError } = await supabaseAdmin
+        .from('scheduled_events')
+        .delete()
+        .eq('user_id', demoUser.id)
+
+      if (deleteEventsError) {
+        return NextResponse.json({ error: deleteEventsError.message }, { status: 500 })
+      }
     }
+
+    const serializedEvents = serializeEvents(demoUser.id, seed.events)
+
+    if (serializedEvents.length > 0) {
+      const { error: insertEventsError } = await supabaseAdmin
+        .from('scheduled_events')
+        .insert(serializedEvents)
+
+      if (insertEventsError) {
+        return NextResponse.json({ error: insertEventsError.message }, { status: 500 })
+      }
+    }
+
+    return NextResponse.json({ ok: true, seededEvents: serializedEvents.length, reset: forceReseed })
   }
 
-  return NextResponse.json({ ok: true, seededEvents: serializedEvents.length })
+  return NextResponse.json({ ok: true, seededEvents: 0, existing: true })
 }

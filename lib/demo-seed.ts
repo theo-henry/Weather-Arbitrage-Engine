@@ -60,7 +60,7 @@ export function applyDemoBlockedTimeRules(preferences: UserPreferences): UserPre
   };
 }
 
-type WeatherSeedActivity = 'run' | 'social' | 'photo';
+type WeatherSeedActivity = 'run' | 'social' | 'photo' | 'commute';
 type DayKind = 'weekday' | 'weekend' | 'any';
 
 interface EventSeedOptions {
@@ -362,28 +362,161 @@ function createEvent(options: EventSeedOptions): CalendarEvent {
 function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
   const weekIndex = offset < 7 ? 0 : 1;
   const weekday = getWeekdayLabel(dateKey);
+  const isWeekday = !['Saturday', 'Sunday'].includes(weekday);
 
-  switch (weekday) {
-    case 'Monday':
-      return [
+  const events: CalendarEvent[] = [];
+
+  // ── Weekday routine ──────────────────────────────────────────────
+  if (isWeekday) {
+    // Morning jog (most weekdays except Friday)
+    if (weekday !== 'Friday') {
+      events.push(
         createEvent({
-          title: 'Team standup',
+          title: weekIndex === 0 ? 'Morning jog — Retiro' : 'Morning jog — Madrid Río',
           dateKey,
-          start: '09:30',
-          end: '10:00',
-          category: 'indoor',
-          color: 'blue',
-          location: 'Zoom',
+          start: '07:00',
+          end: '07:45',
+          category: 'weather-sensitive',
+          activity: 'run',
+          color: 'amber',
+          location: weekIndex === 0 ? 'Retiro Park' : 'Madrid Río',
+          notes: 'Easy 5k loop. Skip if raining.',
         }),
+      );
+    }
+
+    // Bike commute in (every weekday)
+    events.push(
+      createEvent({
+        title: 'Bike to coworking',
+        dateKey,
+        start: '08:45',
+        end: '09:15',
+        category: 'weather-sensitive',
+        activity: 'commute',
+        color: 'green',
+        location: 'Chamberí → La Latina',
+        notes: 'Take metro if weather is bad.',
+      }),
+    );
+
+    // Indoor morning meeting (varies by day)
+    switch (weekday) {
+      case 'Monday':
+        events.push(
+          createEvent({
+            title: 'Team standup',
+            dateKey,
+            start: '10:00',
+            end: '10:30',
+            category: 'indoor',
+            color: 'blue',
+            location: 'Zoom',
+          }),
+        );
+        break;
+      case 'Tuesday':
+        events.push(
+          createEvent({
+            title: 'Design review',
+            dateKey,
+            start: '10:00',
+            end: '11:00',
+            category: 'indoor',
+            color: 'blue',
+            location: 'Studio room',
+          }),
+        );
+        break;
+      case 'Wednesday':
+        events.push(
+          createEvent({
+            title: 'Weekly planning',
+            dateKey,
+            start: '09:30',
+            end: '10:15',
+            category: 'indoor',
+            color: 'blue',
+            location: 'Notion + coffee',
+          }),
+        );
+        break;
+      case 'Thursday':
+        events.push(
+          createEvent({
+            title: 'Roadmap review',
+            dateKey,
+            start: '10:00',
+            end: '11:00',
+            category: 'indoor',
+            color: 'blue',
+            location: 'Meeting room B',
+          }),
+        );
+        break;
+      case 'Friday':
+        events.push(
+          createEvent({
+            title: 'Weekly retro',
+            dateKey,
+            start: '10:00',
+            end: '11:00',
+            category: 'indoor',
+            color: 'blue',
+            location: 'Zoom',
+          }),
+        );
+        break;
+    }
+
+    // Lunch — outdoor terrace on Mon/Wed/Fri, indoor on Tue/Thu
+    if (weekday === 'Monday' || weekday === 'Wednesday' || weekday === 'Friday') {
+      events.push(
         createEvent({
-          title: weekIndex === 0 ? 'Focus block: roadmap deck' : 'Focus block: partnership brief',
+          title:
+            weekday === 'Wednesday'
+              ? 'Terrace lunch with team'
+              : weekIndex === 0
+                ? 'Lunch on the terrace'
+                : 'Outdoor lunch break',
           dateKey,
-          start: '11:00',
-          end: '12:30',
-          category: 'indoor',
-          color: 'violet',
-          location: 'Home office',
+          start: '13:00',
+          end: '14:00',
+          category: 'weather-sensitive',
+          activity: 'social',
+          color: 'pink',
+          location: weekIndex === 0 ? 'La Barraca terrace' : 'Lateral Castellana terrace',
+          ...(weekday === 'Wednesday' ? { participants: ['Elena', 'Marco'] } : {}),
+          notes: 'Move indoors if it rains.',
         }),
+      );
+    } else {
+      events.push(
+        createEvent({
+          title:
+            weekday === 'Tuesday' && weekIndex === 0
+              ? 'Lunch with Elena'
+              : weekday === 'Tuesday'
+                ? 'Quick lunch'
+                : 'Coffee with mentor',
+          dateKey,
+          start: weekday === 'Thursday' ? '13:30' : '13:00',
+          end: weekday === 'Thursday' ? '14:15' : '13:45',
+          category: 'indoor',
+          color: 'green',
+          location:
+            weekday === 'Tuesday' && weekIndex === 0
+              ? 'Chamberí'
+              : weekday === 'Thursday'
+                ? 'Café Comercial'
+                : 'Coworking kitchen',
+        }),
+      );
+    }
+
+    // Afternoon indoor block (varies)
+    if (weekday === 'Monday') {
+      events.push(
         createEvent({
           title: weekIndex === 0 ? 'Ops review call' : 'Budget check-in',
           dateKey,
@@ -393,59 +526,9 @@ function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
           color: 'blue',
           location: 'Google Meet',
         }),
-      ];
-
-    case 'Tuesday':
-      return [
-        createEvent({
-          title: 'Design review',
-          dateKey,
-          start: '10:00',
-          end: '11:00',
-          category: 'indoor',
-          color: 'blue',
-          location: 'Studio room',
-        }),
-        createEvent({
-          title: weekIndex === 0 ? 'Lunch with Elena' : 'Dentist appointment',
-          dateKey,
-          start: '13:00',
-          end: '14:00',
-          category: 'indoor',
-          color: 'green',
-          location: weekIndex === 0 ? 'Chamberí' : 'Clínica Velázquez',
-        }),
-        createEvent({
-          title: weekIndex === 0 ? 'Deep work: investor notes' : 'Deep work: onboarding polish',
-          dateKey,
-          start: '16:00',
-          end: '17:30',
-          category: 'indoor',
-          color: 'violet',
-          location: 'Home office',
-        }),
-      ];
-
-    case 'Wednesday':
-      return [
-        createEvent({
-          title: 'Weekly planning',
-          dateKey,
-          start: '09:00',
-          end: '09:45',
-          category: 'indoor',
-          color: 'blue',
-          location: 'Notion + coffee',
-        }),
-        createEvent({
-          title: 'Customer discovery call',
-          dateKey,
-          start: '12:00',
-          end: '13:00',
-          category: 'indoor',
-          color: 'blue',
-          location: 'Zoom',
-        }),
+      );
+    } else if (weekday === 'Wednesday') {
+      events.push(
         createEvent({
           title: 'Prototype sprint',
           dateKey,
@@ -455,6 +538,66 @@ function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
           color: 'violet',
           location: 'Coworking space',
         }),
+      );
+    } else if (weekday === 'Thursday') {
+      events.push(
+        createEvent({
+          title: weekIndex === 0 ? 'Deep work: investor notes' : 'Admin block',
+          dateKey,
+          start: '16:00',
+          end: '17:15',
+          category: 'indoor',
+          color: 'violet',
+          location: 'Home office',
+        }),
+      );
+    }
+
+    // Bike commute home (every weekday)
+    events.push(
+      createEvent({
+        title: 'Bike home',
+        dateKey,
+        start: '17:30',
+        end: '18:00',
+        category: 'weather-sensitive',
+        activity: 'commute',
+        color: 'green',
+        location: 'La Latina → Chamberí',
+      }),
+    );
+
+    // Evening outdoor activity on Tue/Thu
+    if (weekday === 'Tuesday') {
+      events.push(
+        createEvent({
+          title: 'Evening walk along the river',
+          dateKey,
+          start: '19:30',
+          end: '20:15',
+          category: 'weather-sensitive',
+          activity: 'run',
+          color: 'amber',
+          location: 'Madrid Río',
+          notes: 'Recovery walk. Great if the sunset is clear.',
+        }),
+      );
+    } else if (weekday === 'Thursday') {
+      events.push(
+        createEvent({
+          title: weekIndex === 0 ? 'Sunset photo walk' : 'Evening stroll + photos',
+          dateKey,
+          start: '19:30',
+          end: '20:30',
+          category: 'weather-sensitive',
+          activity: 'photo',
+          color: 'amber',
+          location: weekIndex === 0 ? 'Temple of Debod' : 'Parque del Oeste',
+          notes: 'Light-dependent — worth rescheduling if overcast.',
+        }),
+      );
+    } else if (weekday === 'Wednesday') {
+      events.push(
         createEvent({
           title: weekIndex === 0 ? 'Spanish tutoring call' : 'Family call',
           dateKey,
@@ -464,117 +607,118 @@ function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
           color: 'green',
           location: 'Phone',
         }),
-      ];
-
-    case 'Thursday':
-      return [
-        createEvent({
-          title: 'Roadmap review',
-          dateKey,
-          start: '10:00',
-          end: '11:00',
-          category: 'indoor',
-          color: 'blue',
-          location: 'Meeting room B',
-        }),
-        createEvent({
-          title: 'Coffee with mentor',
-          dateKey,
-          start: '13:30',
-          end: '14:15',
-          category: 'indoor',
-          color: 'green',
-          location: 'Café Comercial',
-        }),
-        createEvent({
-          title: weekIndex === 0 ? 'Prototype sprint' : 'Admin block',
-          dateKey,
-          start: '16:00',
-          end: '17:30',
-          category: 'indoor',
-          color: 'violet',
-          location: weekIndex === 0 ? 'Coworking space' : 'Home office',
-        }),
-      ];
-
-    case 'Friday':
-      return [
-        createEvent({
-          title: 'Inbox zero',
-          dateKey,
-          start: '09:30',
-          end: '10:00',
-          category: 'indoor',
-          color: 'green',
-          location: 'Home office',
-        }),
-        createEvent({
-          title: 'Weekly retro',
-          dateKey,
-          start: '11:00',
-          end: '12:00',
-          category: 'indoor',
-          color: 'blue',
-          location: 'Zoom',
-        }),
-        createEvent({
-          title: weekIndex === 0 ? 'Grocery pickup' : 'Bank appointment',
-          dateKey,
-          start: '15:00',
-          end: '16:00',
-          category: 'indoor',
-          color: 'green',
-          location: weekIndex === 0 ? 'Mercado de Chamberí' : 'BBVA Serrano',
-        }),
-      ];
-
-    case 'Saturday':
-      return [
-        createEvent({
-          title: 'Laundry + home reset',
-          dateKey,
-          start: '10:30',
-          end: '11:15',
-          category: 'indoor',
-          color: 'green',
-          location: 'Home',
-        }),
-        createEvent({
-          title: 'Call parents',
-          dateKey,
-          start: '17:30',
-          end: '18:00',
-          category: 'indoor',
-          color: 'green',
-          location: 'Phone',
-        }),
-      ];
-
-    case 'Sunday':
-      return [
-        createEvent({
-          title: 'Meal prep',
-          dateKey,
-          start: '11:00',
-          end: '11:45',
-          category: 'indoor',
-          color: 'green',
-          location: 'Home',
-        }),
-        createEvent({
-          title: 'Week planning',
-          dateKey,
-          start: '18:00',
-          end: '18:30',
-          category: 'indoor',
-          color: 'green',
-          location: 'Home office',
-        }),
-      ];
-
-    default:
-      return [];
+      );
+    }
   }
+
+  // ── Saturday ─────────────────────────────────────────────────────
+  if (weekday === 'Saturday') {
+    events.push(
+      createEvent({
+        title: weekIndex === 0 ? 'Long run — Casa de Campo' : 'Trail run — El Pardo',
+        dateKey,
+        start: '08:00',
+        end: '09:30',
+        category: 'weather-sensitive',
+        activity: 'run',
+        color: 'amber',
+        location: weekIndex === 0 ? 'Casa de Campo' : 'Monte de El Pardo',
+        notes: '12k endurance run. Move to afternoon if morning rain.',
+      }),
+    );
+    events.push(
+      createEvent({
+        title: 'Farmers market',
+        dateKey,
+        start: '10:30',
+        end: '11:30',
+        category: 'weather-sensitive',
+        activity: 'social',
+        color: 'pink',
+        location: 'Mercado de Motores',
+        notes: 'Outdoor stalls — no cover if it rains.',
+      }),
+    );
+    events.push(
+      createEvent({
+        title: weekIndex === 0 ? 'Golden hour photography' : 'Street photography session',
+        dateKey,
+        start: '17:00',
+        end: '18:30',
+        category: 'weather-sensitive',
+        activity: 'photo',
+        color: 'amber',
+        location: weekIndex === 0 ? 'Temple of Debod' : 'Malasaña streets',
+        notes: 'Light-dependent shoot — skip if overcast.',
+      }),
+    );
+    events.push(
+      createEvent({
+        title: 'Call parents',
+        dateKey,
+        start: '19:30',
+        end: '20:00',
+        category: 'indoor',
+        color: 'green',
+        location: 'Phone',
+      }),
+    );
+  }
+
+  // ── Sunday ───────────────────────────────────────────────────────
+  if (weekday === 'Sunday') {
+    events.push(
+      createEvent({
+        title: weekIndex === 0 ? 'Park brunch with friends' : 'Picnic in El Retiro',
+        dateKey,
+        start: '11:00',
+        end: '12:30',
+        category: 'weather-sensitive',
+        activity: 'social',
+        color: 'pink',
+        location: 'Retiro Park',
+        participants: weekIndex === 0 ? ['Paula', 'Javi'] : ['Clara', 'Mauro'],
+        notes: 'Outdoor plan — rain forces a restaurant pivot.',
+      }),
+    );
+    events.push(
+      createEvent({
+        title: 'Meal prep',
+        dateKey,
+        start: '14:00',
+        end: '14:45',
+        category: 'indoor',
+        color: 'green',
+        location: 'Home',
+      }),
+    );
+    events.push(
+      createEvent({
+        title: weekIndex === 0 ? 'Afternoon cycling' : 'Cycling to Casa de Campo',
+        dateKey,
+        start: '16:00',
+        end: '17:30',
+        category: 'weather-sensitive',
+        activity: 'run',
+        color: 'amber',
+        location: 'Madrid Río → Casa de Campo',
+        notes: 'Leisure ride. Flexible timing if weather changes.',
+      }),
+    );
+    events.push(
+      createEvent({
+        title: 'Week planning',
+        dateKey,
+        start: '18:30',
+        end: '19:00',
+        category: 'indoor',
+        color: 'green',
+        location: 'Home office',
+      }),
+    );
+  }
+
+  return events;
 }
 
 function buildUpcomingDateKeys(totalDays: number): string[] {
@@ -584,6 +728,31 @@ function buildUpcomingDateKeys(totalDays: number): string[] {
   return Array.from({ length: totalDays }, (_, offset) =>
     formatDateKey(new Date(anchor.getTime() + offset * DAY_MS), DEMO_TIME_ZONE)
   );
+}
+
+function buildCurrentWeekPastDateKeys(): string[] {
+  const now = new Date();
+  const todayKey = formatDateKey(now, DEMO_TIME_ZONE);
+  const todayAnchor = zonedDateTimeToUtc(todayKey, '12:00');
+  const weekday = getWeekdayLabel(todayKey);
+  const dayMap: Record<string, number> = {
+    Monday: 0,
+    Tuesday: 1,
+    Wednesday: 2,
+    Thursday: 3,
+    Friday: 4,
+    Saturday: 5,
+    Sunday: 6,
+  };
+  const daysFromMonday = dayMap[weekday] ?? 0;
+
+  const result: string[] = [];
+  for (let i = daysFromMonday; i > 0; i--) {
+    result.push(
+      formatDateKey(new Date(todayAnchor.getTime() - i * DAY_MS), DEMO_TIME_ZONE),
+    );
+  }
+  return result;
 }
 
 function findWeatherCandidate(
@@ -722,19 +891,31 @@ export function buildDemoSeed(): {
   preferences: UserPreferences;
   events: CalendarEvent[];
 } {
-  const dateKeys = buildUpcomingDateKeys(14);
-  const baseEvents = sortEvents(
-    dateKeys.flatMap((dateKey, offset) => buildBaseDayEvents(dateKey, offset))
+  const futureDateKeys = buildUpcomingDateKeys(14);
+  const pastDateKeys = buildCurrentWeekPastDateKeys();
+
+  // Past events fill the current week view so the calendar isn't empty
+  const pastEvents = sortEvents(
+    pastDateKeys.flatMap((dateKey, index) => buildBaseDayEvents(dateKey, index)),
   );
+
+  // Future events get full weather analysis
+  const futureBaseEvents = sortEvents(
+    futureDateKeys.flatMap((dateKey, offset) => buildBaseDayEvents(dateKey, offset)),
+  );
+
   const windows = getWindows(DEMO_CITY);
+  const allBaseEvents = [...pastEvents, ...futureBaseEvents];
+
+  // Place additional one-off outdoor events in poor-weather windows for suggestions
   const weatherSensitiveEvents = buildWeatherSensitiveEvents(
-    dateKeys,
+    futureDateKeys,
     windows,
-    baseEvents
+    allBaseEvents,
   );
 
   return {
     preferences: DEMO_PREFERENCES,
-    events: sortEvents([...baseEvents, ...weatherSensitiveEvents]),
+    events: sortEvents([...allBaseEvents, ...weatherSensitiveEvents]),
   };
 }
