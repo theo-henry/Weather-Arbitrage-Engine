@@ -41,7 +41,7 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { events: calendarEvents } = useCalendarEvents()
 
-  const { windows, loading, error, isLive } = useWeatherData(preferences.city)
+  const { windows, loading, error, isLive, source, snapshotAt } = useWeatherData(preferences.city)
 
   // Blocked preference windows and existing calendar events are hard constraints —
   // remove them before scoring or ranking suggestions.
@@ -158,6 +158,7 @@ export default function DashboardPage() {
                 <p className="text-muted-foreground">
                   Optimal windows for {preferences.activity} in {preferences.city}
                   {isLive && <span className="ml-2 inline-flex items-center gap-1 text-xs text-green-500 font-medium"><span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />Live</span>}
+                  {source === 'snapshot' && <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-500 font-medium">Saved snapshot{snapshotAt ? ` from ${new Date(snapshotAt).toLocaleString()}` : ''}</span>}
                   {loading && <span className="ml-2 text-xs text-muted-foreground">Loading weather data...</span>}
                 </p>
                 {error && (

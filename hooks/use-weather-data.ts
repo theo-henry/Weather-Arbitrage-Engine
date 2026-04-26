@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import type { City, TimeWindow } from '@/lib/types';
-import { fetchWeatherWindows } from '@/lib/weatherApi';
+import { fetchWeatherWindowsResult, type WeatherDataSource } from '@/lib/weatherApi';
 
 export function useWeatherData(city: City) {
   const [windows, setWindows] = useState<TimeWindow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLive, setIsLive] = useState(false);
+  const [source, setSource] = useState<WeatherDataSource | null>(null);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -15,17 +17,23 @@ export function useWeatherData(city: City) {
       setLoading(true);
       setError(null);
       setIsLive(false);
+      setSource(null);
+      setSnapshotAt(null);
 
       try {
-        const data = await fetchWeatherWindows(city);
+        const data = await fetchWeatherWindowsResult(city);
         if (!cancelled) {
-          setWindows(data);
-          setIsLive(true);
+          setWindows(data.windows);
+          setSource(data.source);
+          setSnapshotAt(data.snapshotAt ?? null);
+          setIsLive(data.source === 'live');
         }
       } catch (err) {
         if (!cancelled) {
           setWindows([]);
           setIsLive(false);
+          setSource(null);
+          setSnapshotAt(null);
           setError(err instanceof Error ? err.message : 'Failed to fetch weather');
         }
       } finally {
@@ -42,5 +50,5 @@ export function useWeatherData(city: City) {
     };
   }, [city]);
 
-  return { windows, loading, error, isLive };
+  return { windows, loading, error, isLive, source, snapshotAt };
 }

@@ -1,14 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { buildDemoSeed } from '@/lib/demo-seed'
-import { fetchGoogleWeather } from '@/lib/google-weather'
 import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
-import { buildWindowsFromApiData } from '@/lib/weatherApi'
-import type { CalendarEvent, TimeWindow } from '@/lib/types'
+import type { CalendarEvent } from '@/lib/types'
 
 const DEMO_EMAIL = 'demo@weatherscheduler.com'
 const DEMO_PASSWORD = 'demo2026'
-const DEMO_CITY = 'Madrid'
 const SUPABASE_SERVICE_ROLE_ERROR =
   'Demo login is not configured. Set SUPABASE_SERVICE_ROLE_KEY.'
 
@@ -83,16 +80,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to resolve demo user' }, { status: 500 })
   }
 
-  let liveWeatherWindows: TimeWindow[] = []
-  try {
-    const weatherPayload = await fetchGoogleWeather(DEMO_CITY)
-    const forecastHours = (weatherPayload.forecast.forecastHours as Record<string, unknown>[] | undefined) ?? []
-    liveWeatherWindows = buildWindowsFromApiData(DEMO_CITY, forecastHours)
-  } catch (error) {
-    console.error('Demo weather seed skipped because Google Weather data is unavailable:', error)
-  }
-
-  const seed = buildDemoSeed(liveWeatherWindows)
+  const seed = buildDemoSeed()
 
   // Only seed preferences when none exist yet or a reset was requested.
   // Preserves any changes the user made in a previous session.

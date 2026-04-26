@@ -2,6 +2,14 @@ import type { City, TimeWindow, WeatherConditions, WeatherConditionType, Confide
 import { getDefaultUserPreferences, getResolvedActivityPreferences } from './preferences';
 import { scoreRun, scoreStudy, scoreSocial, scoreCommute, scorePhoto, scoreWindow } from './scoring';
 
+export type WeatherDataSource = 'live' | 'snapshot';
+
+export interface WeatherWindowsResult {
+  windows: TimeWindow[];
+  source: WeatherDataSource;
+  snapshotAt?: string;
+}
+
 const CITY_LOCATIONS_MAP: Record<string, string[]> = {
   Madrid: ['Retiro Park', 'Casa de Campo', 'Madrid Río', 'El Capricho'],
   Barcelona: ['Barceloneta Beach', 'Park Güell', 'Montjuïc', 'Ciutadella Park'],
@@ -300,7 +308,7 @@ export function buildWindowsFromApiData(
 }
 
 // Fetch weather data from our API route
-export async function fetchWeatherWindows(city: City): Promise<TimeWindow[]> {
+export async function fetchWeatherWindowsResult(city: City): Promise<WeatherWindowsResult> {
   const res = await fetch(`/api/weather?city=${encodeURIComponent(city)}`);
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -314,5 +322,14 @@ export async function fetchWeatherWindows(city: City): Promise<TimeWindow[]> {
     throw new Error('No forecast data received');
   }
 
-  return buildWindowsFromApiData(city, forecastHours);
+  return {
+    windows: buildWindowsFromApiData(city, forecastHours),
+    source: data.source === 'snapshot' ? 'snapshot' : 'live',
+    ...(typeof data.snapshotAt === 'string' ? { snapshotAt: data.snapshotAt } : {}),
+  };
+}
+
+export async function fetchWeatherWindows(city: City): Promise<TimeWindow[]> {
+  const result = await fetchWeatherWindowsResult(city);
+  return result.windows;
 }

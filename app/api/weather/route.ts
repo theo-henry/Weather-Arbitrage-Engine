@@ -9,7 +9,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    return NextResponse.json(await fetchGoogleWeather(city));
+    return NextResponse.json(await fetchGoogleWeather(city), {
+      headers: {
+        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=21600',
+      },
+    });
   } catch (error) {
     if (error instanceof GoogleWeatherError) {
       console.error('Google Weather API error:', error.details ?? error.message);
