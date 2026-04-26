@@ -231,33 +231,7 @@ export function SuggestionGhost({
 }: {
   suggestion: SuggestedAlternative | null | undefined
 }) {
-  if (!suggestion) return null
-
-  const ghostStart = new Date(suggestion.startTime)
-  const ghostEnd = new Date(suggestion.endTime)
-  const startMinutes = (ghostStart.getHours() - DAY_START_HOUR) * 60 + ghostStart.getMinutes()
-  const endMinutes = (ghostEnd.getHours() - DAY_START_HOUR) * 60 + ghostEnd.getMinutes()
-  const top = (startMinutes / 30) * SLOT_HEIGHT
-  const height = Math.max(((endMinutes - startMinutes) / 30) * SLOT_HEIGHT, SLOT_HEIGHT / 2)
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="absolute left-0 right-0 rounded-md border-2 border-dashed border-green-500/40 bg-green-500/5 pointer-events-none"
-      style={{ top, height, zIndex: 5 }}
-    >
-      <div className="px-2 py-1 flex items-center gap-1">
-        <MoveRight className="h-3 w-3 text-green-500" />
-        <span className="text-[10px] font-medium text-green-600 dark:text-green-400">
-          Move here
-        </span>
-        <Badge variant="secondary" className="text-[9px] h-4 bg-green-500/10 text-green-600 ml-auto">
-          {suggestion.score}
-        </Badge>
-      </div>
-    </motion.div>
-  )
+  return null
 }
 
 export { SLOT_HEIGHT, DAY_START_HOUR }
