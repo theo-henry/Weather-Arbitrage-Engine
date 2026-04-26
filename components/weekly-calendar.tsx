@@ -683,12 +683,12 @@ export function WeeklyCalendar({
                     <div key={hour}>
                       {/* Hour line */}
                       <div
-                        className="absolute w-full border-t border-border/60"
+                        className="absolute w-full border-t border-border/90"
                         style={{ top: (hour - DAY_START_HOUR) * 2 * SLOT_HEIGHT }}
                       />
                       {/* Half-hour line */}
                       <div
-                        className="absolute w-full border-t border-border/30 border-dashed"
+                        className="absolute w-full border-t border-border/50 border-dashed"
                         style={{ top: (hour - DAY_START_HOUR) * 2 * SLOT_HEIGHT + SLOT_HEIGHT }}
                       />
                       {/* Weather heatmap background */}

@@ -7,15 +7,14 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ActivitySelector } from '@/components/activity-selector'
+import { CitySearch } from '@/components/city-search'
 import type {
   Activity,
   ActivityPreferenceProfile,
   ActivityWeatherComfort,
-  City,
   TimeBias,
   UserPreferences,
 } from '@/lib/types'
-import { CITIES } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface PreferencePanelProps {
@@ -93,18 +92,7 @@ export function PreferencePanel({
         <Label className="mb-3 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           City
         </Label>
-        <Select value={preferences.city} onValueChange={(value) => updatePreferences({ city: value as City })}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a city" />
-          </SelectTrigger>
-          <SelectContent>
-            {CITIES.map((city) => (
-              <SelectItem key={city} value={city}>
-                {city}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CitySearch value={preferences.city} onChange={(city) => updatePreferences({ city })} />
       </div>
 
       <motion.div

@@ -2,7 +2,7 @@ import type { City, TimeWindow, WeatherConditions, WeatherConditionType, Confide
 import { getDefaultUserPreferences, getResolvedActivityPreferences } from './preferences';
 import { scoreRun, scoreStudy, scoreSocial, scoreCommute, scorePhoto, scoreWindow } from './scoring';
 
-const CITY_LOCATIONS_MAP: Record<City, string[]> = {
+const CITY_LOCATIONS_MAP: Record<string, string[]> = {
   Madrid: ['Retiro Park', 'Casa de Campo', 'Madrid Río', 'El Capricho'],
   Barcelona: ['Barceloneta Beach', 'Park Güell', 'Montjuïc', 'Ciutadella Park'],
   Valencia: ['Turia Gardens', 'Malvarrosa Beach', 'Albufera', 'City of Arts'],
@@ -10,7 +10,7 @@ const CITY_LOCATIONS_MAP: Record<City, string[]> = {
 };
 
 // Base temperature profiles for each city (hour -> base temp)
-const CITY_BASE_TEMPS: Record<City, number> = {
+const CITY_BASE_TEMPS: Record<string, number> = {
   Madrid: 22,
   Barcelona: 24,
   Valencia: 25,
@@ -31,7 +31,7 @@ function seededUnit(...parts: Array<string | number>): number {
 
 // Generate realistic weather for a given hour
 function generateWeather(hour: number, dayOffset: number, city: City): WeatherConditions {
-  const baseTemp = CITY_BASE_TEMPS[city];
+  const baseTemp = CITY_BASE_TEMPS[city] ?? 20;
 
   const tempNoise = seededUnit(city, dayOffset, hour, 'temp');
   const humidityNoise = seededUnit(city, dayOffset, hour, 'humidity');
@@ -152,7 +152,7 @@ export function getWindows(city: City): TimeWindow[] {
   const windows: TimeWindow[] = [];
   const now = new Date();
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const locations = CITY_LOCATIONS_MAP[city];
+  const locations = CITY_LOCATIONS_MAP[city] ?? [city];
 
   // Default preferences for scoring
   const defaultPreferences = getDefaultUserPreferences(city);
@@ -248,7 +248,7 @@ export function getWindowAtTime(windows: TimeWindow[], time: string, dayOffset: 
 }
 
 // Export all cities' data
-export function getAllCitiesData(): Record<City, TimeWindow[]> {
+export function getAllCitiesData(): Record<string, TimeWindow[]> {
   return {
     Madrid: getWindows('Madrid'),
     Barcelona: getWindows('Barcelona'),

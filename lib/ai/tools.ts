@@ -461,7 +461,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
         properties: {
           activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
           set_selected_activity: { type: 'boolean' },
-          city: { type: 'string', enum: ['Madrid', 'Barcelona', 'Valencia', 'Seville'] },
+          city: { type: 'string', description: 'City name' },
           usual_time: { type: 'string', description: 'HH:MM' },
           profile_updates: {
             type: 'object',
@@ -867,8 +867,8 @@ function executeUpdateAccountSettings(args: Record<string, unknown>, context: To
   const targetActivity = isActivity(args.activity) ? args.activity : nextPreferences.activity
   const appliedChanges: string[] = []
 
-  if (typeof args.city === 'string' && ['Madrid', 'Barcelona', 'Valencia', 'Seville'].includes(args.city)) {
-    nextPreferences.city = args.city as City
+  if (typeof args.city === 'string' && args.city.trim().length > 0) {
+    nextPreferences.city = args.city.trim()
     context.city = nextPreferences.city
     appliedChanges.push(`city set to ${nextPreferences.city}`)
   }

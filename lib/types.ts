@@ -1,5 +1,5 @@
 export type Activity = 'run' | 'study' | 'social' | 'commute' | 'photo' | 'custom';
-export type City = 'Madrid' | 'Barcelona' | 'Valencia' | 'Seville';
+export type City = string;
 export type Confidence = 'High' | 'Medium' | 'Low';
 export type CommuteMode = 'car' | 'bike' | 'walk';
 export type Sensitivity = 'low' | 'medium' | 'high';
@@ -196,6 +196,7 @@ export interface AssistantRequest {
   timezone: string;
   mode?: AssistantMode;
   pendingOperations?: PendingCalendarOperation[] | null;
+  locationHint?: { location: string; city: City };
 }
 
 export interface AssistantResponse {

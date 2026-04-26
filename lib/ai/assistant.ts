@@ -100,6 +100,17 @@ function buildCompareModeInstruction() {
   ].join('\n')
 }
 
+function buildLocationHintInstruction(locationHint: AssistantRequest['locationHint']) {
+  if (!locationHint) return ''
+  return [
+    `LOCATION CONTEXT: The user mentioned "${locationHint.location}" in their message.`,
+    `"${locationHint.location}" is located in ${locationHint.city}.`,
+    `All weather-based time suggestions must be based exclusively on the weather data for ${locationHint.city} that has been loaded into the context window.`,
+    `When presenting suggestions, refer to "${locationHint.location}" specifically as the activity location.`,
+    `Do not suggest or compare times based on any other city's weather.`,
+  ].join(' ')
+}
+
 function buildSystemInstruction(request: AssistantRequest) {
   const latestUserMessageHints = getLatestUserMessageHints(request.messages)
   const schedulerInstruction = [
@@ -130,6 +141,7 @@ function buildSystemInstruction(request: AssistantRequest) {
     `Current time: ${request.now}.`,
     `User timezone: ${request.timezone}.`,
     buildPendingSummary(request.pendingOperations),
+    buildLocationHintInstruction(request.locationHint),
   ].join('\n')
 
   if (request.mode !== 'compare') {
@@ -154,6 +166,7 @@ function buildSystemInstruction(request: AssistantRequest) {
     `Current time: ${request.now}.`,
     `User timezone: ${request.timezone}.`,
     buildPendingSummary(request.pendingOperations),
+    buildLocationHintInstruction(request.locationHint),
   ].join('\n')
 }
 

@@ -2,7 +2,7 @@ import type { City, TimeWindow, WeatherConditions, WeatherConditionType, Confide
 import { getDefaultUserPreferences, getResolvedActivityPreferences } from './preferences';
 import { scoreRun, scoreStudy, scoreSocial, scoreCommute, scorePhoto, scoreWindow } from './scoring';
 
-const CITY_LOCATIONS_MAP: Record<City, string[]> = {
+const CITY_LOCATIONS_MAP: Record<string, string[]> = {
   Madrid: ['Retiro Park', 'Casa de Campo', 'Madrid Río', 'El Capricho'],
   Barcelona: ['Barceloneta Beach', 'Park Güell', 'Montjuïc', 'Ciutadella Park'],
   Valencia: ['Turia Gardens', 'Malvarrosa Beach', 'Albufera', 'City of Arts'],
@@ -194,7 +194,7 @@ export function buildWindowsFromApiData(
 ): TimeWindow[] {
   const windows: TimeWindow[] = [];
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const locations = CITY_LOCATIONS_MAP[city];
+  const locations = CITY_LOCATIONS_MAP[city] ?? [city];
 
   const defaultPreferences = getDefaultUserPreferences(city);
 
@@ -301,7 +301,7 @@ export function buildWindowsFromApiData(
 
 // Fetch weather data from our API route
 export async function fetchWeatherWindows(city: City): Promise<TimeWindow[]> {
-  const res = await fetch(`/api/weather?city=${city}`);
+  const res = await fetch(`/api/weather?city=${encodeURIComponent(city)}`);
   if (!res.ok) {
     throw new Error(`Weather API error: ${res.status}`);
   }

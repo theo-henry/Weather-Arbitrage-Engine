@@ -14,14 +14,28 @@ import type {
   AssistantResponse,
   CalendarEvent,
   ChatMessage,
-  City,
   PendingCalendarOperation,
   TimeWindow,
 } from '@/lib/types'
+import { CITY_LOCATIONS } from '@/lib/types'
+import { fetchWeatherWindows } from '@/lib/weatherApi'
+import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import { cn } from '@/lib/utils'
 
+function detectLocationCity(text: string): { location: string; city: string } | null {
+  const lower = text.toLowerCase()
+  for (const [city, locations] of Object.entries(CITY_LOCATIONS) as [string, string[]][]) {
+    for (const location of locations) {
+      if (lower.includes(location.toLowerCase())) {
+        return { location, city }
+      }
+    }
+  }
+  return null
+}
+
 interface SchedulerChatProps {
-  city: City
+  city: string
   windows: TimeWindow[]
   className?: string
 }
@@ -124,18 +138,39 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
     setIsTyping(true)
 
     try {
+      const latestUserMsg = [...nextMessages].reverse().find((m) => m.role === 'user')
+      const detected = latestUserMsg ? detectLocationCity(latestUserMsg.content) : null
+
+      let effectiveWindows = windows
+      let effectiveCity = city
+      let locationHint: AssistantRequest['locationHint']
+
+      if (detected) {
+        locationHint = detected
+        if (detected.city !== city) {
+          try {
+            const locationWindows = await fetchWeatherWindows(detected.city)
+            effectiveWindows = applyPreferenceScoresToWindows(locationWindows, preferences)
+            effectiveCity = detected.city
+          } catch {
+            // fall back to current windows silently
+          }
+        }
+      }
+
       const request: AssistantRequest = {
         messages: nextMessages.map((message) => ({
           role: message.role,
           content: message.content,
         })),
         events: state.events,
-        windows,
-        city,
+        windows: effectiveWindows,
+        city: effectiveCity,
         preferences,
         now: new Date().toISOString(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         pendingOperations: activePendingOperations,
+        ...(locationHint ? { locationHint } : {}),
       }
 
       const response = await fetch('/api/assistant', {

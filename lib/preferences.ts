@@ -112,10 +112,7 @@ function normalizeActivity(value: unknown): Activity | null {
 }
 
 function isCity(value: unknown): value is City {
-  return (
-    typeof value === 'string' &&
-    (value === 'Madrid' || value === 'Barcelona' || value === 'Valencia' || value === 'Seville')
-  )
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function isWeekday(value: unknown): value is WeekdayKey {

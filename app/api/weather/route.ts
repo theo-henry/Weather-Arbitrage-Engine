@@ -9,16 +9,63 @@ const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   Seville: { lat: 37.3891, lng: -5.9845 },
 };
 
+interface NominatimResult {
+  lat?: string;
+  lon?: string;
+}
+
 // Module-level cache: forecasts change slowly, so reuse across renders/users
 // to keep us under the 100 forecast-hours/day Google quota.
 type CachedEntry = { expiresAt: number; payload: unknown };
 const cache = new Map<string, CachedEntry>();
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
+const resolvedCityCoords = new Map<string, { lat: number; lng: number }>();
+
+async function resolveCityCoords(city: string): Promise<{ lat: number; lng: number } | null> {
+  const knownCoords = CITY_COORDS[city];
+  if (knownCoords) return knownCoords;
+
+  const cacheKey = city.toLowerCase();
+  const cached = resolvedCityCoords.get(cacheKey);
+  if (cached) return cached;
+
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', city);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '1');
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      'User-Agent': 'WeatherSchedulerApp/1.0',
+      'Accept-Language': 'en',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Nominatim geocoding failed: ${response.status}`);
+  }
+
+  const data = (await response.json()) as NominatimResult[];
+  const result = data[0];
+  if (!result) return null;
+
+  const coords = {
+    lat: Number(result.lat),
+    lng: Number(result.lon),
+  };
+
+  if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+    return null;
+  }
+
+  resolvedCityCoords.set(cacheKey, coords);
+  return coords;
+}
 
 export async function GET(request: NextRequest) {
-  const city = request.nextUrl.searchParams.get('city');
+  const city = request.nextUrl.searchParams.get('city')?.trim();
 
-  if (!city || !CITY_COORDS[city]) {
+  if (!city) {
     return NextResponse.json({ error: 'Invalid city' }, { status: 400 });
   }
 
@@ -31,7 +78,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(cached.payload);
   }
 
-  const coords = CITY_COORDS[city];
+  let resolvedCoords: { lat: number; lng: number } | null = null;
+
+  try {
+    resolvedCoords = await resolveCityCoords(city);
+  } catch (error) {
+    console.error('City geocoding failed:', error);
+    return NextResponse.json({ error: 'Failed to resolve city' }, { status: 502 });
+  }
+
+  if (!resolvedCoords) {
+    return NextResponse.json({ error: 'City not found' }, { status: 400 });
+  }
+
+  const coords = resolvedCoords;
 
   // Aim for 10 days; if quota is tight the API returns a partial list and we use whatever we got.
   const TOTAL_HOURS = 240;
