@@ -1,11 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { buildDemoSeed } from '@/lib/demo-seed'
+import { fetchGoogleWeather } from '@/lib/google-weather'
 import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
-import type { CalendarEvent } from '@/lib/types'
+import { buildWindowsFromApiData } from '@/lib/weatherApi'
+import type { CalendarEvent, TimeWindow } from '@/lib/types'
 
 const DEMO_EMAIL = 'demo@weatherscheduler.com'
 const DEMO_PASSWORD = 'demo2026'
+const DEMO_CITY = 'Madrid'
 const SUPABASE_SERVICE_ROLE_ERROR =
   'Demo login is not configured. Set SUPABASE_SERVICE_ROLE_KEY.'
 
@@ -80,7 +83,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to resolve demo user' }, { status: 500 })
   }
 
-  const seed = buildDemoSeed()
+  let liveWeatherWindows: TimeWindow[] = []
+  try {
+    const weatherPayload = await fetchGoogleWeather(DEMO_CITY)
+    const forecastHours = (weatherPayload.forecast.forecastHours as Record<string, unknown>[] | undefined) ?? []
+    liveWeatherWindows = buildWindowsFromApiData(DEMO_CITY, forecastHours)
+  } catch (error) {
+    console.error('Demo weather seed skipped because Google Weather data is unavailable:', error)
+  }
+
+  const seed = buildDemoSeed(liveWeatherWindows)
 
   // Only seed preferences when none exist yet or a reset was requested.
   // Preserves any changes the user made in a previous session.
@@ -115,6 +127,16 @@ export async function POST(request: Request) {
     .order('end_time', { ascending: false })
     .limit(1)
 
+  const { data: existingEventRows } = await supabaseAdmin
+    .from('scheduled_events')
+    .select('data')
+    .eq('user_id', demoUser.id)
+
+  const hasMockScoredWeatherEvents = (existingEventRows ?? []).some((row) => {
+    const data = row.data as { createdVia?: unknown; weatherScore?: unknown } | null
+    return data?.createdVia === 'mock' && typeof data.weatherScore === 'number'
+  })
+
   // Reseed when all existing events have ended (stale demo data from a previous session)
   const isStale =
     count !== null &&
@@ -122,7 +144,7 @@ export async function POST(request: Request) {
     latestEvent?.[0]?.end_time &&
     new Date(latestEvent[0].end_time) < new Date()
 
-  const shouldSeed = forceReseed || count === null || count === 0 || isStale
+  const shouldSeed = forceReseed || count === null || count === 0 || isStale || hasMockScoredWeatherEvents
 
   if (shouldSeed) {
     // Always delete before reseeding — skipping the delete when count is 0 or null

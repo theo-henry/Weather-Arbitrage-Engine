@@ -1,6 +1,5 @@
 import type { CalendarEvent, City, EventColor, TimeWindow, UserPreferences } from './types';
 import { getDefaultUserPreferences } from './preferences';
-import { getWindows } from './mockData';
 import { computeSuggestion } from './weather-suggestions';
 
 const DEMO_CITY: City = 'Madrid';
@@ -74,7 +73,6 @@ interface EventSeedOptions {
   notes?: string;
   participants?: string[];
   activity?: WeatherSeedActivity;
-  weatherScore?: number;
 }
 
 interface WeatherEventPlan {
@@ -351,9 +349,6 @@ function createEvent(options: EventSeedOptions): CalendarEvent {
     ...(options.participants ? { participants: options.participants } : {}),
     ...(options.notes ? { notes: options.notes } : {}),
     ...(options.location ? { location: options.location } : {}),
-    ...(typeof options.weatherScore === 'number'
-      ? { weatherScore: options.weatherScore }
-      : {}),
     suggestedAlternative: null,
     createdVia: 'mock',
   };
@@ -809,7 +804,6 @@ function findWeatherCandidate(
         ...(plan.participants ? { participants: plan.participants } : {}),
         location: plan.location,
         notes: plan.notes,
-        weatherScore: currentScore,
         suggestedAlternative: null,
         createdVia: 'mock',
       };
@@ -887,7 +881,7 @@ function buildWeatherSensitiveEvents(
   return selectedEvents;
 }
 
-export function buildDemoSeed(): {
+export function buildDemoSeed(weatherWindows: TimeWindow[] = []): {
   preferences: UserPreferences;
   events: CalendarEvent[];
 } {
@@ -904,13 +898,12 @@ export function buildDemoSeed(): {
     futureDateKeys.flatMap((dateKey, offset) => buildBaseDayEvents(dateKey, offset)),
   );
 
-  const windows = getWindows(DEMO_CITY);
   const allBaseEvents = [...pastEvents, ...futureBaseEvents];
 
-  // Place additional one-off outdoor events in poor-weather windows for suggestions
+  // Place additional one-off outdoor events only when live Google weather windows are available.
   const weatherSensitiveEvents = buildWeatherSensitiveEvents(
     futureDateKeys,
-    windows,
+    weatherWindows,
     allBaseEvents,
   );
 

@@ -99,7 +99,7 @@ export function Footer() {
 
         <div className="mt-12 pt-8 border-t border-border/50 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-sm text-muted-foreground">
-            Made for hackathon demos. Not a real weather service.
+            Weather data is provided by the configured Google Weather API.
           </p>
           <div className="flex items-center gap-1 text-sm text-muted-foreground">
             <span>Built with</span>

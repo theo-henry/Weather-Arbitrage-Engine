@@ -303,7 +303,8 @@ export function buildWindowsFromApiData(
 export async function fetchWeatherWindows(city: City): Promise<TimeWindow[]> {
   const res = await fetch(`/api/weather?city=${encodeURIComponent(city)}`);
   if (!res.ok) {
-    throw new Error(`Weather API error: ${res.status}`);
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Weather API error: ${res.status}`);
   }
 
   const data = await res.json();

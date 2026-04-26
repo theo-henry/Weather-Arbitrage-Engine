@@ -29,7 +29,7 @@ import type { CalendarEvent, ProtectedEventAnalysis, SuggestedAlternative } from
 function SchedulerContent() {
   const [preferences] = usePreferences()
   const city = preferences.city
-  const { windows } = useWeatherData(city)
+  const { windows, loading: weatherLoading, error: weatherError } = useWeatherData(city)
   const { state, dispatch, hydrated } = useCalendarStore()
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
 
@@ -93,6 +93,30 @@ function SchedulerContent() {
   )
 
   const autoProtectMeta = useMemo(() => {
+    if (weatherLoading) {
+      return {
+        atRiskCount: 0,
+        actionableCount: 0,
+        highRiskCount: 0,
+        status: 'loading' as const,
+        buttonTone: 'border-blue-500/25 bg-blue-500/5 hover:bg-blue-500/10',
+        badgeTone: 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300',
+        summary: 'Loading live Google weather for schedule protection.',
+      }
+    }
+
+    if (weatherError) {
+      return {
+        atRiskCount: 0,
+        actionableCount: 0,
+        highRiskCount: 0,
+        status: 'paused' as const,
+        buttonTone: 'border-red-500/30 bg-red-500/8 hover:bg-red-500/12',
+        badgeTone: 'border-red-500/30 bg-red-500/12 text-red-600 dark:text-red-300',
+        summary: 'Live Google weather is unavailable; schedule protection is paused.',
+      }
+    }
+
     const atRiskCount = analyses.filter(
       (analysis) => analysis.isWeatherRelevant && analysis.riskLevel !== 'low'
     ).length
@@ -108,6 +132,7 @@ function SchedulerContent() {
         atRiskCount,
         actionableCount,
         highRiskCount,
+        status: 'high-risk' as const,
         buttonTone: 'border-red-500/30 bg-red-500/8 hover:bg-red-500/12',
         badgeTone: 'border-red-500/30 bg-red-500/12 text-red-600 dark:text-red-300',
         summary:
@@ -122,6 +147,7 @@ function SchedulerContent() {
         atRiskCount,
         actionableCount,
         highRiskCount,
+        status: 'at-risk' as const,
         buttonTone: 'border-amber-500/30 bg-amber-500/8 hover:bg-amber-500/12',
         badgeTone: 'border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-300',
         summary:
@@ -135,11 +161,12 @@ function SchedulerContent() {
       atRiskCount,
       actionableCount,
       highRiskCount,
+      status: 'clear' as const,
       buttonTone: 'border-green-500/25 bg-green-500/5 hover:bg-green-500/10',
       badgeTone: 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300',
       summary: 'No active weather conflicts right now.',
     }
-  }, [analyses])
+  }, [analyses, weatherError, weatherLoading])
 
   const handleCreateEvent = useCallback((startTime: Date, endTime: Date) => {
     setEditingEvent({
@@ -218,7 +245,11 @@ function SchedulerContent() {
         </span>
         <Badge variant="outline" className={cn('text-[10px]', autoProtectMeta.badgeTone)}>
           {autoProtectMeta.atRiskCount === 0
-            ? 'Clear'
+            ? autoProtectMeta.status === 'loading'
+              ? 'Loading'
+              : autoProtectMeta.status === 'paused'
+                ? 'Paused'
+                : 'Clear'
             : `${autoProtectMeta.atRiskCount} issue${autoProtectMeta.atRiskCount === 1 ? '' : 's'}`}
         </Badge>
       </div>
@@ -327,12 +358,18 @@ function SchedulerContent() {
                   <SheetTitle>Auto-Protect Schedule</SheetTitle>
                   <Badge variant="outline" className={cn('text-[10px]', autoProtectMeta.badgeTone)}>
                     {autoProtectMeta.atRiskCount === 0
-                      ? 'All clear'
+                      ? autoProtectMeta.status === 'loading'
+                        ? 'Loading'
+                        : autoProtectMeta.status === 'paused'
+                          ? 'Paused'
+                          : 'All clear'
                       : `${autoProtectMeta.atRiskCount} at risk`}
                   </Badge>
                 </div>
                 <SheetDescription className="mt-1">
-                  Review weather-driven conflicts and one-click safer moves when you want them.
+                  {autoProtectMeta.status === 'paused'
+                    ? `Live Google weather is unavailable for ${city}: ${weatherError}`
+                    : 'Review weather-driven conflicts and one-click safer moves when you want them.'}
                 </SheetDescription>
               </div>
             </div>

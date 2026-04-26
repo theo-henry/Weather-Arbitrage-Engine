@@ -152,8 +152,9 @@ export function SchedulerChat({ city, windows, className }: SchedulerChatProps) 
             const locationWindows = await fetchWeatherWindows(detected.city)
             effectiveWindows = applyPreferenceScoresToWindows(locationWindows, preferences)
             effectiveCity = detected.city
-          } catch {
-            // fall back to current windows silently
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to fetch weather'
+            throw new Error(`Live Google weather data is unavailable for ${detected.city}: ${message}`)
           }
         }
       }

@@ -1,6 +1,9 @@
 import type { City, TimeWindow, WeatherConditions, WeatherConditionType, Confidence } from './types';
 import { getDefaultUserPreferences, getResolvedActivityPreferences } from './preferences';
 import { scoreRun, scoreStudy, scoreSocial, scoreCommute, scorePhoto, scoreWindow } from './scoring';
+import { getBestWindow, getTopWindows, getWindowAtTime } from './weather-window-utils';
+
+export { getBestWindow, getTopWindows, getWindowAtTime };
 
 const CITY_LOCATIONS_MAP: Record<string, string[]> = {
   Madrid: ['Retiro Park', 'Casa de Campo', 'Madrid Río', 'El Capricho'],
@@ -216,35 +219,6 @@ export function getWindows(city: City): TimeWindow[] {
   }
   
   return windows;
-}
-
-// Get the best window for an activity
-export function getBestWindow(windows: TimeWindow[], activity: keyof TimeWindow['scores']): TimeWindow {
-  return windows.reduce((best, current) => 
-    current.scores[activity] > best.scores[activity] ? current : best
-  );
-}
-
-// Get top N windows for an activity
-export function getTopWindows(windows: TimeWindow[], activity: keyof TimeWindow['scores'], count: number = 5): TimeWindow[] {
-  return [...windows]
-    .sort((a, b) => b.scores[activity] - a.scores[activity])
-    .slice(0, count);
-}
-
-// Get window at a specific time
-export function getWindowAtTime(windows: TimeWindow[], time: string, dayOffset: number = 0): TimeWindow | undefined {
-  const [hour, minute] = time.split(':').map(Number);
-  const slotIndex = hour * 2 + (minute >= 30 ? 1 : 0);
-  return windows.find(w => {
-    const wDate = new Date(w.date);
-    const today = new Date();
-    const dayDiff = Math.floor((wDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    const wHour = parseInt(w.startTime.split(':')[0]);
-    const wMinute = parseInt(w.startTime.split(':')[1]);
-    const wSlot = wHour * 2 + (wMinute >= 30 ? 1 : 0);
-    return dayDiff === dayOffset && wSlot === slotIndex;
-  });
 }
 
 // Export all cities' data

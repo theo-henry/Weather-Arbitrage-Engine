@@ -13,7 +13,7 @@ import { TimelineChart } from '@/components/timeline-chart'
 import { InsightPanel } from '@/components/insight-panel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { getTopWindows, getWindowAtTime } from '@/lib/mockData'
+import { getTopWindows, getWindowAtTime } from '@/lib/weather-window-utils'
 import { isTimeWindowBlockedForAnyActivity } from '@/lib/preferences'
 import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import { doesWindowConflictWithEvents } from '@/lib/weather-suggestions'
@@ -41,8 +41,7 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { events: calendarEvents } = useCalendarEvents()
 
-  // Get windows for the selected city (live API with mock fallback)
-  const { windows, loading, isLive } = useWeatherData(preferences.city)
+  const { windows, loading, error, isLive } = useWeatherData(preferences.city)
 
   // Blocked preference windows and existing calendar events are hard constraints —
   // remove them before scoring or ranking suggestions.
@@ -161,6 +160,11 @@ export default function DashboardPage() {
                   {isLive && <span className="ml-2 inline-flex items-center gap-1 text-xs text-green-500 font-medium"><span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />Live</span>}
                   {loading && <span className="ml-2 text-xs text-muted-foreground">Loading weather data...</span>}
                 </p>
+                {error && (
+                  <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                    Live Google weather data is unavailable: {error}
+                  </div>
+                )}
               </motion.div>
 
               {/* Recommendation Card */}
@@ -170,6 +174,13 @@ export default function DashboardPage() {
                     <h2 className="text-lg font-semibold">Loading preferences</h2>
                     <p className="mt-2 text-sm text-muted-foreground">
                       Checking your blocked time rules before showing dashboard recommendations.
+                    </p>
+                  </div>
+                ) : error ? (
+                  <div className="rounded-2xl border border-border/50 bg-card p-6">
+                    <h2 className="text-lg font-semibold">Live weather unavailable</h2>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Recommendations are hidden until Google Weather data loads for {preferences.city}.
                     </p>
                   </div>
                 ) : bestWindow ? (

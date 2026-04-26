@@ -172,7 +172,7 @@ function CompareContent() {
   const router = useRouter()
   const { state, dispatch } = useCalendarStore()
   const [preferences, setPreferences] = usePreferences()
-  const { windows: rawWindows } = useWeatherData(preferences.city)
+  const { windows: rawWindows, loading: weatherLoading, error: weatherError } = useWeatherData(preferences.city)
   const windows = useMemo(
     () => applyPreferenceScoresToWindows(rawWindows, preferences),
     [rawWindows, preferences],
@@ -240,6 +240,13 @@ function CompareContent() {
     setIsTyping(true)
 
     try {
+      if (weatherLoading) {
+        throw new Error('Live Google weather is still loading. Try again in a moment.')
+      }
+      if (weatherError) {
+        throw new Error(`Live Google weather data is unavailable: ${weatherError}`)
+      }
+
       const request: AssistantRequest = {
         mode: 'compare',
         messages: nextMessages.map((message) => ({
@@ -411,6 +418,11 @@ function CompareContent() {
             <p className="text-muted-foreground max-w-xl mx-auto">
               Ask naturally. I’ll interpret the activity, check your calendar and preferences, then compare the strongest weather windows.
             </p>
+            {weatherError && (
+              <div className="mx-auto mt-4 max-w-xl rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                Live Google weather data is unavailable: {weatherError}
+              </div>
+            )}
           </motion.div>
 
           <motion.div

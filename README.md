@@ -14,7 +14,7 @@ Instead of showing raw weather data, the app scores upcoming 30-minute time wind
 - Provides a conversational scheduler that can create, update, and delete calendar events after user confirmation.
 - Detects weather-sensitive calendar events that are at risk and suggests safer times.
 - Supports persistent accounts with saved preferences and events through Supabase.
-- Uses live Google Weather data when configured, with deterministic mock weather fallback for reliable demos.
+- Uses live Google Weather data through the server-side weather proxy.
 
 ## Hackathon Demo Flow
 
@@ -77,7 +77,7 @@ Next.js App Router
   -> Weather data hook
       -> /api/weather server proxy
       -> Google Weather API when configured
-      -> mock weather fallback when unavailable
+      -> visible error state when Google Weather data is unavailable
   -> Scoring engine
       -> activity-specific scores
       -> preference-adjusted windows
@@ -126,7 +126,7 @@ Then fill in the values you want to enable:
 
 | Variable | Required For | Notes |
 | --- | --- | --- |
-| `GOOGLE_WEATHER_API_KEY` | Live weather | Without it, the app uses mock weather data. |
+| `GOOGLE_WEATHER_API_KEY` | Live weather | Required for weather recommendations in deployed environments. |
 | `GEMINI_API_KEY` | AI chat and scheduling assistant | Required for `/compare` and `/scheduler` assistant responses. |
 | `AI_PROVIDER` | AI provider selection | Defaults to `gemini`. |
 | `GEMINI_MODEL` | Gemini model override | Defaults to `gemini-2.5-flash`. |
@@ -201,7 +201,7 @@ pnpm start
 | `hooks/` | Client-side state hooks for weather, preferences, user, and calendar data. |
 | `lib/scoring.ts` | Activity-specific weather scoring engine. |
 | `lib/weatherApi.ts` | Google Weather API response transformation into app time windows. |
-| `lib/mockData.ts` | Deterministic fallback weather data. |
+| `lib/mockData.ts` | Local deterministic weather generator kept for development utilities only. |
 | `lib/ai/` | Assistant provider, Gemini integration, and scheduling tools. |
 | `lib/weather-suggestions.ts` | Auto-Protect risk detection and alternative time suggestions. |
 | `lib/supabase/` | Supabase client, server, middleware, and config helpers. |

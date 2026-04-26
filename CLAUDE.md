@@ -13,7 +13,7 @@ pnpm lint         # ESLint
 
 ## Environment
 
-Requires `GOOGLE_WEATHER_API_KEY` in `.env.local` for live weather data. The app falls back to mock data if the key is missing or the API fails. See `.env.example`.
+Requires `GOOGLE_WEATHER_API_KEY` in `.env.local` for live weather data. In deployed environments, weather UI should show a visible error instead of falling back to generated data.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ useWeatherData(city) hook
     → Google Weather API (currentConditions + 48h hourly forecast)
   → weatherApi.ts: maps Google response → WeatherConditions, interpolates to 30-min slots
   → scoring.ts: scores each slot per activity using weighted factors
-  → Falls back to mockData.ts if API unavailable
+  → Shows a live-weather error if Google data is unavailable
 ```
 
 ### Core Modules (lib/)
@@ -35,7 +35,7 @@ useWeatherData(city) hook
 - **types.ts** — All domain types. `TimeWindow` is the central data structure containing weather, scores for all activities, and factor breakdowns. `WeatherConditions` is the normalized weather format used everywhere.
 - **scoring.ts** — Pure scoring functions per activity (`scoreRun`, `scoreStudy`, `scoreSocial`, `scoreFlight`, `scorePhoto`). Each returns `{ score: 0-100, factors: Record<string, number> }`. Weights are tunable constants at the top.
 - **weatherApi.ts** — Transforms Google Weather API responses into `TimeWindow[]`. Handles condition type mapping (Google enums → internal types), metric extraction from nested response, and 30-min interpolation from hourly data.
-- **mockData.ts** — Deterministic mock weather generator with city-specific profiles. Also exports query helpers (`getBestWindow`, `getTopWindows`, `getWindowAtTime`) used by all pages regardless of data source.
+- **mockData.ts** — Deterministic mock weather generator with city-specific profiles for development-only utilities. Shared query helpers live in `weather-window-utils.ts`.
 
 ### API Route
 
