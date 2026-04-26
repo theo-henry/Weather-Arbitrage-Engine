@@ -9,6 +9,98 @@ const CITY_LOCATIONS_MAP: Record<City, string[]> = {
   Seville: ['María Luisa Park', 'Alamillo Park', 'Triana Bridge', 'Plaza de España'],
 };
 
+// All four cities are in the same timezone
+const CITY_TIMEZONE = 'Europe/Madrid';
+
+// google.type.DateTime shape as returned by the Google Weather REST API
+interface GoogleDateTime {
+  year?: number;
+  month?: number;
+  day?: number;
+  hours?: number;
+  minutes?: number;
+  seconds?: number;
+  // offset from UTC in seconds, e.g. "7200s" for UTC+2
+  utcOffset?: string;
+}
+
+// Weekday abbreviations returned by Intl in en-US with {weekday:'short'}
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+/**
+ * Extract a UTC Date, the local *city* hour, and the local day-of-week from a
+ * Google Weather API forecast hour entry.
+ *
+ * Google serialises `displayDateTime` as a `google.type.DateTime` object (not a
+ * string), so casting it to `string` gives "[object Object]" — we have to
+ * handle the object form explicitly.  The `interval.startTime` fallback is a
+ * UTC ISO-8601 string; we convert it to city-local time via Intl so the labels
+ * are always correct regardless of the browser's timezone.
+ */
+function extractDateParts(
+  h: Record<string, unknown>,
+): { date: Date; hour: number; dayOfWeek: number } {
+  const displayDT = h.displayDateTime as GoogleDateTime | string | undefined;
+
+  // Primary path: structured google.type.DateTime object
+  if (displayDT && typeof displayDT === 'object') {
+    const year = displayDT.year ?? new Date().getFullYear();
+    const month = (displayDT.month ?? 1) - 1; // JS months are 0-indexed
+    const day = displayDT.day ?? 1;
+    const hour = displayDT.hours ?? 0;
+    const minutes = displayDT.minutes ?? 0;
+    const seconds = displayDT.seconds ?? 0;
+
+    // Parse the UTC offset (e.g. "7200s" → 7200 seconds)
+    const offsetSeconds = displayDT.utcOffset
+      ? parseInt(displayDT.utcOffset.replace('s', ''), 10)
+      : 0;
+
+    // Build a proper UTC timestamp: local time − UTC offset = UTC
+    const utcMs =
+      Date.UTC(year, month, day, hour, minutes, seconds) - offsetSeconds * 1000;
+    const date = new Date(utcMs);
+
+    // Day of week from the local calendar date (timezone-safe: use UTC on the
+    // local date components which are already expressed in city-local time)
+    const dayOfWeek = new Date(Date.UTC(year, month, day)).getUTCDay();
+
+    return { date, hour, dayOfWeek };
+  }
+
+  // Fallback: interval.startTime is a UTC ISO string (or a plain string
+  // displayDateTime that somehow came through as a string)
+  const interval = h.interval as { startTime?: string } | undefined;
+  const rawStr =
+    (typeof displayDT === 'string' && displayDT && displayDT !== '[object Object]'
+      ? displayDT
+      : undefined) ??
+    interval?.startTime ??
+    new Date().toISOString();
+
+  const utcDate = new Date(rawStr);
+
+  // Convert UTC → city-local time using Intl so the labels are always right
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: CITY_TIMEZONE,
+      hour: 'numeric',
+      weekday: 'short',
+      hour12: false,
+    })
+      .formatToParts(utcDate)
+      .map((p) => [p.type, p.value]),
+  );
+
+  // Intl may return "24" for midnight; normalise to 0
+  const hour = parseInt(parts['hour'] ?? '0', 10) % 24;
+  const dayOfWeek = WEEKDAY_INDEX[parts['weekday'] ?? 'Sun'] ?? 0;
+
+  return { date: utcDate, hour, dayOfWeek };
+}
+
 // Map Google Weather API condition types to our internal types
 function mapConditionType(googleType: string): WeatherConditionType {
   switch (googleType) {
@@ -106,21 +198,16 @@ export function buildWindowsFromApiData(
 
   const defaultPreferences = getDefaultUserPreferences(city);
 
-  // Map each hourly forecast to weather conditions
-  const hourlyWeather: { weather: WeatherConditions; date: Date }[] = forecastHours.map((h) => {
-    const interval = h.interval as { startTime?: string } | undefined;
-    const displayDateTime = (h.displayDateTime as string) || (interval?.startTime as string) || new Date().toISOString();
-    return {
-      weather: mapHourToWeatherConditions(h),
-      date: new Date(displayDateTime),
-    };
-  });
+  // Map each hourly forecast to weather conditions and city-local time parts
+  const hourlyWeather: { weather: WeatherConditions; date: Date; hour: number; dayOfWeek: number }[] =
+    forecastHours.map((h) => {
+      const { date, hour, dayOfWeek } = extractDateParts(h);
+      return { weather: mapHourToWeatherConditions(h), date, hour, dayOfWeek };
+    });
 
   // Generate 30-min slots from hourly data
   for (let i = 0; i < hourlyWeather.length; i++) {
-    const { weather, date } = hourlyWeather[i];
-    const hour = date.getHours();
-    const dayOfWeek = date.getDay();
+    const { weather, date, hour, dayOfWeek } = hourlyWeather[i];
 
     // Calculate day offset from now
     const now = new Date();
@@ -170,11 +257,11 @@ export function buildWindowsFromApiData(
       : weather;
 
     const startTime30 = `${hour.toString().padStart(2, '0')}:30`;
-    const endHour = hour + 1;
+    const endHour = (hour + 1) % 24;
     const endTime30 = `${endHour.toString().padStart(2, '0')}:00`;
 
-    const date30 = new Date(date);
-    date30.setMinutes(30);
+    // Add 30 minutes to the UTC timestamp directly (timezone-safe)
+    const date30 = new Date(date.getTime() + 30 * 60 * 1000);
 
     const runResult30 = scoreRun(nextWeather, getResolvedActivityPreferences(defaultPreferences, 'run'), hour);
     const studyResult30 = scoreStudy(nextWeather, getResolvedActivityPreferences(defaultPreferences, 'study'), hour);
