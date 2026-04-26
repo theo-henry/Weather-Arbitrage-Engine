@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof GoogleWeatherError) {
       console.error('Google Weather API error:', error.details ?? error.message);
       return NextResponse.json(
-        { error: error.message, details: error.details },
+        { error: error.message },
         { status: error.status },
       );
     }

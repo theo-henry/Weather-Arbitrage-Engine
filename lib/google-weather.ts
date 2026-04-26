@@ -1,5 +1,3 @@
-const GOOGLE_WEATHER_API_KEY = process.env.GOOGLE_WEATHER_API_KEY;
-
 const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
   Madrid: { lat: 40.4168, lng: -3.7038 },
   Barcelona: { lat: 41.3874, lng: 2.1686 },
@@ -33,6 +31,32 @@ type CachedEntry = { expiresAt: number; payload: GoogleWeatherPayload };
 const cache = new Map<string, CachedEntry>();
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const resolvedCityCoords = new Map<string, { lat: number; lng: number }>();
+
+function normalizeEnvValue(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim() || null;
+  }
+
+  return trimmed;
+}
+
+function getGoogleWeatherApiKey() {
+  const apiKey = normalizeEnvValue(process.env.GOOGLE_WEATHER_API_KEY);
+  if (!apiKey) {
+    throw new GoogleWeatherError(
+      'Google Weather API key is not configured for this deployment',
+      500,
+    );
+  }
+
+  return apiKey;
+}
 
 async function resolveCityCoords(city: string): Promise<{ lat: number; lng: number } | null> {
   const knownCoords = CITY_COORDS[city];
@@ -75,7 +99,7 @@ async function resolveCityCoords(city: string): Promise<{ lat: number; lng: numb
   return coords;
 }
 
-async function fetchAllForecastHours(coords: { lat: number; lng: number }) {
+async function fetchAllForecastHours(apiKey: string, coords: { lat: number; lng: number }) {
   const collected: Record<string, unknown>[] = [];
   let pageToken: string | undefined;
   let lastResponse: Record<string, unknown> | null = null;
@@ -86,7 +110,7 @@ async function fetchAllForecastHours(coords: { lat: number; lng: number }) {
 
   while (collected.length < totalHours) {
     const url = new URL('https://weather.googleapis.com/v1/forecast/hours:lookup');
-    url.searchParams.set('key', GOOGLE_WEATHER_API_KEY!);
+    url.searchParams.set('key', apiKey);
     url.searchParams.set('location.latitude', coords.lat.toString());
     url.searchParams.set('location.longitude', coords.lng.toString());
     url.searchParams.set('unitsSystem', 'METRIC');
@@ -127,9 +151,7 @@ export async function fetchGoogleWeather(city: string): Promise<GoogleWeatherPay
     throw new GoogleWeatherError('Invalid city', 400);
   }
 
-  if (!GOOGLE_WEATHER_API_KEY) {
-    throw new GoogleWeatherError('Google Weather API key is not configured', 500);
-  }
+  const apiKey = getGoogleWeatherApiKey();
 
   const cached = cache.get(normalizedCity);
   if (cached && cached.expiresAt > Date.now()) {
@@ -141,11 +163,15 @@ export async function fetchGoogleWeather(city: string): Promise<GoogleWeatherPay
     throw new GoogleWeatherError('City not found', 400);
   }
 
+  const currentUrl = new URL('https://weather.googleapis.com/v1/currentConditions:lookup');
+  currentUrl.searchParams.set('key', apiKey);
+  currentUrl.searchParams.set('location.latitude', coords.lat.toString());
+  currentUrl.searchParams.set('location.longitude', coords.lng.toString());
+  currentUrl.searchParams.set('unitsSystem', 'METRIC');
+
   const [currentRes, forecast] = await Promise.all([
-    fetch(
-      `https://weather.googleapis.com/v1/currentConditions:lookup?key=${GOOGLE_WEATHER_API_KEY}&location.latitude=${coords.lat}&location.longitude=${coords.lng}&unitsSystem=METRIC`,
-    ),
-    fetchAllForecastHours(coords),
+    fetch(currentUrl.toString()),
+    fetchAllForecastHours(apiKey, coords),
   ]);
 
   if (!currentRes.ok) {
