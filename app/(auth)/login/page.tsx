@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+const DEMO_EMAIL = 'demo@weatherscheduler.com'
+const DEMO_PASSWORD = 'demo2026'
+
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -44,6 +47,19 @@ function LoginForm() {
     e.preventDefault()
     setError(null)
     setLoading(true)
+
+    // If demo credentials are entered manually, go through the same setup flow
+    // as the demo button so the account is guaranteed to exist.
+    if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
+      const res = await fetch('/api/demo-login', { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error || 'Failed to set up demo account')
+        setLoading(false)
+        return
+      }
+    }
+
     await handleLogin(email, password)
     setLoading(false)
   }
@@ -51,8 +67,8 @@ function LoginForm() {
   async function handleDemoLogin() {
     setError(null)
     setDemoLoading(true)
-    setEmail('demo@weatherscheduler.com')
-    setPassword('demo2026')
+    setEmail(DEMO_EMAIL)
+    setPassword(DEMO_PASSWORD)
 
     // Ensure demo account exists (creates it if needed)
     const res = await fetch('/api/demo-login', { method: 'POST' })
@@ -63,19 +79,7 @@ function LoginForm() {
       return
     }
 
-    const success = await handleLogin('demo@weatherscheduler.com', 'demo2026')
-    if (!success) {
-      // If login failed, try resetting the demo user
-      const resetRes = await fetch('/api/demo-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reset: true })
-      })
-      if (resetRes.ok) {
-        // Try login again after reset
-        await handleLogin('demo@weatherscheduler.com', 'demo2026')
-      }
-    }
+    await handleLogin(DEMO_EMAIL, DEMO_PASSWORD)
     setDemoLoading(false)
   }
 

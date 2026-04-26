@@ -67,7 +67,7 @@ export function HeroSection() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="text-lg sm:text-xl text-white/90 mb-4 max-w-2xl mx-auto text-balance"
         >
-          Ask for a plan, get the best weather-aware time.
+          Stop checking the forecast. Start <span className="edge-gradient-text">planning</span> with it.
         </motion.p>
 
         <motion.p

@@ -47,12 +47,12 @@ export async function POST(request: Request) {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  // Check if demo user exists
-  const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
-  let demoUser = existingUsers?.users?.find((u) => u.email === DEMO_EMAIL)
+  // Find or create the demo user.
+  // Use a large perPage to avoid pagination issues on projects with many users.
+  const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
+  let demoUser = existingUsers?.users?.find((u) => u.email === DEMO_EMAIL) ?? null
 
   if (!demoUser) {
-    // Create the demo user with email auto-confirmed
     const { data: createdUserData, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email: DEMO_EMAIL,
       password: DEMO_PASSWORD,
@@ -64,8 +64,8 @@ export async function POST(request: Request) {
     }
 
     demoUser = createdUserData.user
-  } else if (forceReseed) {
-    // Update the demo user's password if reset is requested
+  } else {
+    // Always ensure the password is correct so manually-typed credentials work too.
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(demoUser.id, {
       password: DEMO_PASSWORD,
       email_confirm: true,
@@ -80,22 +80,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to resolve demo user' }, { status: 500 })
   }
 
-  // Always upsert preferences (idempotent)
   const seed = buildDemoSeed()
 
-  const { error: preferencesError } = await supabaseAdmin
+  // Only seed preferences when none exist yet or a reset was requested.
+  // Preserves any changes the user made in a previous session.
+  const { data: existingPrefs } = await supabaseAdmin
     .from('user_preferences')
-    .upsert(
-      {
-        user_id: demoUser.id,
-        data: seed.preferences,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' },
-    )
+    .select('user_id')
+    .eq('user_id', demoUser.id)
+    .maybeSingle()
 
-  if (preferencesError) {
-    return NextResponse.json({ error: preferencesError.message }, { status: 500 })
+  if (!existingPrefs || forceReseed) {
+    const { error: preferencesError } = await supabaseAdmin
+      .from('user_preferences')
+      .upsert(
+        {
+          user_id: demoUser.id,
+          data: seed.preferences,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
+
+    if (preferencesError) {
+      return NextResponse.json({ error: preferencesError.message }, { status: 500 })
+    }
   }
 
   // Only seed events if the user has none, data is stale, or a reset was requested
@@ -116,27 +125,27 @@ export async function POST(request: Request) {
   const shouldSeed = forceReseed || count === null || count === 0 || isStale
 
   if (shouldSeed) {
-    // Clear existing events before reseeding
-    if ((forceReseed || isStale) && count && count > 0) {
-      const { error: deleteEventsError } = await supabaseAdmin
-        .from('scheduled_events')
-        .delete()
-        .eq('user_id', demoUser.id)
+    // Always delete before reseeding — skipping the delete when count is 0 or null
+    // risks inserting duplicate PKs if the count query was stale or errored.
+    const { error: deleteEventsError } = await supabaseAdmin
+      .from('scheduled_events')
+      .delete()
+      .eq('user_id', demoUser.id)
 
-      if (deleteEventsError) {
-        return NextResponse.json({ error: deleteEventsError.message }, { status: 500 })
-      }
+    if (deleteEventsError) {
+      return NextResponse.json({ error: deleteEventsError.message }, { status: 500 })
     }
 
     const serializedEvents = serializeEvents(demoUser.id, seed.events)
 
     if (serializedEvents.length > 0) {
-      const { error: insertEventsError } = await supabaseAdmin
+      // Use upsert as a safety net in case any events survived the delete
+      const { error: upsertEventsError } = await supabaseAdmin
         .from('scheduled_events')
-        .insert(serializedEvents)
+        .upsert(serializedEvents, { onConflict: 'id' })
 
-      if (insertEventsError) {
-        return NextResponse.json({ error: insertEventsError.message }, { status: 500 })
+      if (upsertEventsError) {
+        return NextResponse.json({ error: upsertEventsError.message }, { status: 500 })
       }
     }
 
