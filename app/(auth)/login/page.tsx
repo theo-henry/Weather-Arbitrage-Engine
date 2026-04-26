@@ -24,9 +24,13 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
 
-  async function handleLogin(loginEmail: string, loginPassword: string) {
+  async function handleLogin(
+    loginEmail: string,
+    loginPassword: string,
+    { showError = true }: { showError?: boolean } = {},
+  ) {
     if (!isSupabaseConfigured()) {
-      setError(SUPABASE_PUBLIC_ENV_ERROR)
+      if (showError) setError(SUPABASE_PUBLIC_ENV_ERROR)
       return false
     }
 
@@ -34,7 +38,7 @@ function LoginForm() {
     const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword })
 
     if (error) {
-      setError(error.message)
+      if (showError) setError(error.message)
       return false
     }
 
@@ -43,21 +47,36 @@ function LoginForm() {
     return true
   }
 
+  async function ensureDemoAccount() {
+    const res = await fetch('/api/demo-login', { method: 'POST' })
+    if (res.ok) return true
+
+    const data = await res.json().catch(() => ({}))
+    setError(data.error || 'Failed to set up demo account')
+    return false
+  }
+
+  async function handleDemoCredentialsLogin() {
+    if (await handleLogin(DEMO_EMAIL, DEMO_PASSWORD, { showError: false })) {
+      return true
+    }
+
+    if (!(await ensureDemoAccount())) {
+      return false
+    }
+
+    return handleLogin(DEMO_EMAIL, DEMO_PASSWORD)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    // If demo credentials are entered manually, go through the same setup flow
-    // as the demo button so the account is guaranteed to exist.
     if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
-      const res = await fetch('/api/demo-login', { method: 'POST' })
-      if (!res.ok) {
-        const data = await res.json()
-        setError(data.error || 'Failed to set up demo account')
-        setLoading(false)
-        return
-      }
+      await handleDemoCredentialsLogin()
+      setLoading(false)
+      return
     }
 
     await handleLogin(email, password)
@@ -70,16 +89,7 @@ function LoginForm() {
     setEmail(DEMO_EMAIL)
     setPassword(DEMO_PASSWORD)
 
-    // Ensure demo account exists (creates it if needed)
-    const res = await fetch('/api/demo-login', { method: 'POST' })
-    if (!res.ok) {
-      const data = await res.json()
-      setError(data.error || 'Failed to set up demo account')
-      setDemoLoading(false)
-      return
-    }
-
-    await handleLogin(DEMO_EMAIL, DEMO_PASSWORD)
+    await handleDemoCredentialsLogin()
     setDemoLoading(false)
   }
 
