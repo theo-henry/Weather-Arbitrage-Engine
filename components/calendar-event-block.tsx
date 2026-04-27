@@ -2,7 +2,7 @@
 
 import { memo } from 'react'
 import { motion } from 'framer-motion'
-import { CloudAlert, MoveRight, X, Users, MapPin } from 'lucide-react'
+import { Bus, CloudAlert, MoveRight, X, Users, MapPin } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
@@ -63,6 +63,7 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
   const isCompact = height < SLOT_HEIGHT * 1.5
   const suggestion = analysis?.recommendedAlternative ?? null
   const hasSuggestion = !!suggestion
+  const isCommuteModeSuggestion = suggestion?.type === 'commute-mode'
   const riskLevel = analysis?.riskLevel
   const showRiskHighlight = analysis?.isWeatherRelevant && riskLevel && riskLevel !== 'low'
 
@@ -134,15 +135,21 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
                     <p className="text-xs text-muted-foreground">
                       {suggestion!.reason}
                     </p>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Badge variant="secondary" className="bg-red-500/10 text-red-600">
-                        Score: {analysis?.currentScore ?? event.weatherScore ?? '?'}
+                    {isCommuteModeSuggestion ? (
+                      <Badge variant="secondary" className="w-fit bg-blue-500/10 text-blue-600">
+                        Mode recommendation
                       </Badge>
-                      <MoveRight className="h-3 w-3 text-muted-foreground" />
-                      <Badge variant="secondary" className="bg-green-500/10 text-green-600">
-                        Score: {suggestion!.score}
-                      </Badge>
-                    </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs">
+                        <Badge variant="secondary" className="bg-red-500/10 text-red-600">
+                          Score: {analysis?.currentScore ?? event.weatherScore ?? '?'}
+                        </Badge>
+                        <MoveRight className="h-3 w-3 text-muted-foreground" />
+                        <Badge variant="secondary" className="bg-green-500/10 text-green-600">
+                          Score: {suggestion!.score}
+                        </Badge>
+                      </div>
+                    )}
                     {analysis?.riskReasons?.length ? (
                       <div className="flex flex-wrap gap-1">
                         {analysis.riskReasons.slice(0, 2).map((reason) => (
@@ -152,17 +159,36 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
                         ))}
                       </div>
                     ) : null}
-                    <p className="text-xs text-muted-foreground">
-                      Move to {format(new Date(suggestion!.startTime), 'h:mm a')} - {format(new Date(suggestion!.endTime), 'h:mm a')}
-                    </p>
+                    {isCommuteModeSuggestion ? (
+                      <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Bus className="h-3 w-3" />
+                        Keep time. Switch to {suggestion!.commuteModeLabel}
+                        {suggestion!.secondaryCommuteModeLabel ? ` or ${suggestion!.secondaryCommuteModeLabel}` : ''}.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Move to {format(new Date(suggestion!.startTime), 'h:mm a')} - {format(new Date(suggestion!.endTime), 'h:mm a')}
+                      </p>
+                    )}
                     <div className="flex gap-2 pt-1">
-                      <Button
-                        size="sm"
-                        className="flex-1 h-7 text-xs"
-                        onClick={() => onAcceptSuggestion(event.id, suggestion!)}
-                      >
-                        Move
-                      </Button>
+                      {isCommuteModeSuggestion ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-7 text-xs"
+                          onClick={() => analysis && onDismissSuggestion(analysis)}
+                        >
+                          Got it
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="flex-1 h-7 text-xs"
+                          onClick={() => onAcceptSuggestion(event.id, suggestion!)}
+                        >
+                          Move
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"

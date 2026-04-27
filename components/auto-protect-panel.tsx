@@ -1,6 +1,6 @@
 'use client'
 
-import { ShieldAlert, ShieldCheck, CloudRain, Wind, Thermometer } from 'lucide-react'
+import { ShieldAlert, ShieldCheck, CloudRain, Wind, Thermometer, Bus, Car } from 'lucide-react'
 import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -69,7 +69,7 @@ export function AutoProtectPanel({
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Proactive weather-risk detection with one-click safer moves.
+              Proactive weather-risk detection with safer timing and commute-mode recommendations.
             </p>
           </div>
         </div>
@@ -87,6 +87,7 @@ export function AutoProtectPanel({
           actionable.map((analysis) => {
             const alternative = analysis.recommendedAlternative!
             const delta = (alternative.score ?? 0) - (analysis.currentScore ?? 0)
+            const isCommuteModeSuggestion = alternative.type === 'commute-mode'
 
             return (
               <div
@@ -107,7 +108,7 @@ export function AutoProtectPanel({
                     </p>
                   </div>
                   <Badge variant="outline" className="shrink-0 text-[10px]">
-                    +{delta} pts
+                    {isCommuteModeSuggestion ? 'Mode' : `+${delta} pts`}
                   </Badge>
                 </div>
 
@@ -128,16 +129,36 @@ export function AutoProtectPanel({
                   })}
                 </div>
 
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Move to {format(new Date(alternative.startTime), 'EEE h:mm a')} -{' '}
-                  {format(new Date(alternative.endTime), 'h:mm a')} for a weather score of{' '}
-                  {alternative.score}.
-                </p>
+                {isCommuteModeSuggestion ? (
+                  <div className="mt-2 rounded-md border border-blue-500/20 bg-blue-500/8 px-2 py-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2 text-foreground">
+                      <Bus className="h-3.5 w-3.5 text-blue-500" />
+                      <span className="font-medium">
+                        Keep the time. Switch to {alternative.commuteModeLabel}
+                        {alternative.secondaryCommuteModeLabel ? ` or ${alternative.secondaryCommuteModeLabel}` : ''}.
+                      </span>
+                    </div>
+                    <p className="mt-1">{alternative.reason}</p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Move to {format(new Date(alternative.startTime), 'EEE h:mm a')} -{' '}
+                    {format(new Date(alternative.endTime), 'h:mm a')} for a weather score of{' '}
+                    {alternative.score}.
+                  </p>
+                )}
 
                 <div className="mt-3 flex gap-2">
-                  <Button size="sm" className="h-8 flex-1" onClick={() => onMove(analysis)}>
-                    Move to Better Time
-                  </Button>
+                  {isCommuteModeSuggestion ? (
+                    <Button size="sm" variant="outline" className="h-8 flex-1" onClick={() => onDismiss(analysis)}>
+                      <Car className="mr-1.5 h-3.5 w-3.5" />
+                      Got it
+                    </Button>
+                  ) : (
+                    <Button size="sm" className="h-8 flex-1" onClick={() => onMove(analysis)}>
+                      Move to Better Time
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" className="h-8" onClick={() => onDismiss(analysis)}>
                     Dismiss
                   </Button>

@@ -1,6 +1,8 @@
 import type {
   Activity,
   CalendarEvent,
+  CommuteAlternativeMode,
+  CommuteMode,
   ProtectedEventAnalysis,
   SuggestedAlternative,
   TimeWindow,
@@ -9,7 +11,8 @@ import type {
   WeatherRelevanceSource,
 } from './types'
 import { isSameDay } from 'date-fns'
-import { formatBlockedTimeRule, getBlockedTimeMatches, isTimeRangeBlocked } from './preferences'
+import { formatBlockedTimeRule, getBlockedTimeMatches, getResolvedActivityPreferences, isTimeRangeBlocked } from './preferences'
+import { scoreCommute } from './scoring'
 import { getWindowEnd, getWindowStart } from './weather-window-utils'
 
 const GOOD_SCORE_THRESHOLD = 70
@@ -17,7 +20,21 @@ const HIGH_RISK_THRESHOLD = 50
 const MIN_IMPROVEMENT = 15
 
 const RUN_KEYWORDS = ['run', 'jog', 'workout', 'yoga', 'hike']
-const COMMUTE_KEYWORDS = ['commute', 'drive', 'driving', 'car', 'walk to work', 'walking commute', 'bike to work', 'bike commute', 'cycle to work', 'cycling commute']
+const COMMUTE_KEYWORDS = [
+  'commute',
+  'drive',
+  'driving',
+  'car',
+  'walk to work',
+  'walking commute',
+  'bike to work',
+  'bike commute',
+  'bike home',
+  'bike to',
+  'cycle to work',
+  'cycling commute',
+  'cycle home',
+]
 const SOCIAL_KEYWORDS = ['picnic', 'terrace', 'drinks', 'dinner', 'bbq', 'outdoor', 'park', 'beach', 'rooftop']
 const PHOTO_KEYWORDS = ['photo', 'photos', 'photography', 'camera', 'golden hour', 'sunset']
 const INDOOR_KEYWORDS = ['meeting', 'call', 'standup', 'office', 'zoom', 'meet', 'review', 'workshop', 'study', 'deep work']
@@ -42,6 +59,29 @@ function getOverlappingWindows(
 function getAverageScore(windows: TimeWindow[], activity: ScorableActivity): number {
   if (windows.length === 0) return -1
   const scores = windows.map((w) => w.scores[activity])
+  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+}
+
+function getAverageCommuteScore(
+  windows: TimeWindow[],
+  preferences: UserPreferences | undefined,
+  mode: CommuteMode,
+): number {
+  if (windows.length === 0) return -1
+  if (!preferences) return getAverageScore(windows, 'commute')
+
+  const scores = windows.map((window) => {
+    const hour = parseInt(window.startTime.split(':')[0], 10)
+    return scoreCommute(
+      window.weather,
+      {
+        ...getResolvedActivityPreferences(preferences, 'commute'),
+        commuteMode: mode,
+      },
+      hour,
+    ).score
+  })
+
   return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
 }
 
@@ -120,6 +160,14 @@ function inferActivity(text: string): Activity | null {
   return null
 }
 
+function inferCommuteMode(event: CalendarEvent): CommuteMode | null {
+  const text = [event.title, event.notes, event.location].filter(Boolean).join(' ').toLowerCase()
+  if (/\b(bike|biking|cycle|cycling|cycled)\b/.test(text)) return 'bike'
+  if (/\b(walk|walking|stroll)\b/.test(text)) return 'walk'
+  if (/\b(drive|driving|car)\b/.test(text)) return 'car'
+  return null
+}
+
 function inferWeatherRelevance(
   event: CalendarEvent
 ): {
@@ -164,11 +212,76 @@ function getSuggestionFingerprint(event: CalendarEvent, suggestion: SuggestedAlt
     event.id,
     event.startTime,
     event.endTime,
+    suggestion.type ?? 'time',
     suggestion.startTime,
     suggestion.endTime,
     suggestion.score,
+    suggestion.commuteMode ?? 'na',
     currentScore ?? 'na',
   ].join('|')
+}
+
+function getCommuteModeLabel(mode: CommuteAlternativeMode) {
+  switch (mode) {
+    case 'public_transport':
+      return 'public transport'
+    case 'car':
+      return 'car'
+    case 'bike':
+      return 'bike'
+    case 'walk':
+      return 'walk'
+  }
+}
+
+function getCommuteModeReason(
+  currentWindows: TimeWindow[],
+  currentMode: CommuteMode,
+  suggestedMode: CommuteAlternativeMode,
+) {
+  const currentReason = getRiskReasons(currentWindows).join(', ')
+  return `${currentReason} for a ${getCommuteModeLabel(
+    currentMode,
+  )} commute at this time. Keep the time, but switch to ${getCommuteModeLabel(
+    suggestedMode,
+  )}${suggestedMode === 'public_transport' ? ' or take the car' : ''}.`
+}
+
+function computeCommuteModeSuggestion(
+  event: CalendarEvent,
+  currentWindows: TimeWindow[],
+  currentScore: number,
+  preferences?: UserPreferences,
+): SuggestedAlternative | null {
+  const currentMode = inferCommuteMode(event)
+  if (!currentMode || currentMode === 'car' || currentWindows.length === 0) return null
+
+  const avg = getAverageWeather(currentWindows)
+  if (!avg) return null
+
+  const hasSevereExposure =
+    avg.rain > 35 ||
+    avg.wind > 20 ||
+    currentWindows.some((window) => window.weather.condition === 'rain' || window.weather.condition === 'storm')
+  if (!hasSevereExposure && currentScore >= GOOD_SCORE_THRESHOLD) return null
+
+  const carScore = getAverageCommuteScore(currentWindows, preferences, 'car')
+  const suggestedMode: CommuteAlternativeMode = 'public_transport'
+  const suggestedScore = Math.max(carScore, currentScore + MIN_IMPROVEMENT)
+
+  if (suggestedScore < GOOD_SCORE_THRESHOLD && suggestedScore < currentScore + MIN_IMPROVEMENT) return null
+
+  return {
+    type: 'commute-mode',
+    startTime: event.startTime,
+    endTime: event.endTime,
+    score: Math.min(100, suggestedScore),
+    reason: getCommuteModeReason(currentWindows, currentMode, suggestedMode),
+    commuteMode: suggestedMode,
+    commuteModeLabel: getCommuteModeLabel(suggestedMode),
+    secondaryCommuteMode: 'car',
+    secondaryCommuteModeLabel: getCommuteModeLabel('car'),
+  }
 }
 
 export function getConflictingEvents(
@@ -212,7 +325,11 @@ export function computeSuggestion(
   const durationSlots = Math.ceil(durationMs / (30 * 60 * 1000))
 
   const currentWindows = getOverlappingWindows(eventStart, eventEnd, windows)
-  const currentScore = getAverageScore(currentWindows, relevance.scoredActivity)
+  const eventCommuteMode = relevance.scoredActivity === 'commute' ? inferCommuteMode(event) : null
+  const currentScore =
+    relevance.scoredActivity === 'commute' && eventCommuteMode
+      ? getAverageCommuteScore(currentWindows, options?.preferences, eventCommuteMode)
+      : getAverageScore(currentWindows, relevance.scoredActivity)
   const blockedRules =
     options?.preferences && event.activity
       ? getBlockedTimeMatches(options.preferences, event.activity, eventStart, eventEnd, timezone)
@@ -223,6 +340,10 @@ export function computeSuggestion(
       : null
 
   if (currentScore < 0 || (currentScore >= GOOD_SCORE_THRESHOLD && !blockedReason)) return null
+
+  if (relevance.scoredActivity === 'commute' && !blockedReason) {
+    return computeCommuteModeSuggestion(event, currentWindows, currentScore, options?.preferences)
+  }
 
   const sameDayWindows = windows
     .filter((w) => {
@@ -244,7 +365,10 @@ export function computeSuggestion(
 
   for (let i = 0; i <= sameDayWindows.length - durationSlots; i++) {
     const block = sameDayWindows.slice(i, i + durationSlots)
-    const blockScore = getAverageScore(block, relevance.scoredActivity)
+    const blockScore =
+      relevance.scoredActivity === 'commute' && eventCommuteMode
+        ? getAverageCommuteScore(block, options?.preferences, eventCommuteMode)
+        : getAverageScore(block, relevance.scoredActivity)
     if (blockScore <= bestScore + MIN_IMPROVEMENT) continue
 
     const [sh, sm] = block[0].startTime.split(':').map(Number)
@@ -315,7 +439,11 @@ export function computeProtectedEventAnalyses(
     }
 
     const currentWindows = getOverlappingWindows(new Date(event.startTime), new Date(event.endTime), windows)
-    const currentScore = getAverageScore(currentWindows, relevance.scoredActivity)
+    const eventCommuteMode = relevance.scoredActivity === 'commute' ? inferCommuteMode(event) : null
+    const currentScore =
+      relevance.scoredActivity === 'commute' && eventCommuteMode
+        ? getAverageCommuteScore(currentWindows, options?.preferences, eventCommuteMode)
+        : getAverageScore(currentWindows, relevance.scoredActivity)
     const blockedRules =
       options?.preferences && event.activity
         ? getBlockedTimeMatches(

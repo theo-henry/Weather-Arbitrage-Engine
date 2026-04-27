@@ -100,12 +100,19 @@ export type EventCategory = 'weather-sensitive' | 'indoor';
 export type EventColor = 'blue' | 'green' | 'amber' | 'red' | 'violet' | 'pink';
 export type WeatherRiskLevel = 'low' | 'medium' | 'high';
 export type WeatherRelevanceSource = 'tagged' | 'heuristic';
+export type SuggestedAlternativeType = 'time' | 'commute-mode';
+export type CommuteAlternativeMode = 'public_transport' | CommuteMode;
 
 export interface SuggestedAlternative {
+  type?: SuggestedAlternativeType;
   startTime: string; // ISO
   endTime: string;   // ISO
   score: number;
   reason: string;
+  commuteMode?: CommuteAlternativeMode;
+  commuteModeLabel?: string;
+  secondaryCommuteMode?: CommuteAlternativeMode;
+  secondaryCommuteModeLabel?: string;
 }
 
 export interface WeatherRisk {
