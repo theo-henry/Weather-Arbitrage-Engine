@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { WeatherIcon } from '@/components/weather-icon'
 import { ScoreChip } from '@/components/score-chip'
-import type { TimeWindow, ScheduledEvent, Activity } from '@/lib/types'
+import type { TimeWindow, ScheduledEvent } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface WeatherCalendarProps {
@@ -26,15 +26,6 @@ function getScoreColor(score: number): string {
   if (score >= 60) return 'bg-lime-500/15'
   if (score >= 40) return 'bg-amber-500/10'
   return 'bg-red-500/10'
-}
-
-const activityIcons: Record<Activity, string> = {
-  run: '🏃',
-  study: '📚',
-  social: '🥂',
-  commute: '🚗',
-  photo: '📸',
-  custom: '⚙️',
 }
 
 export function WeatherCalendar({ 
@@ -185,7 +176,6 @@ export function WeatherCalendar({
                         exit={{ opacity: 0, scale: 0.9 }}
                         className="absolute inset-2 rounded-md bg-gradient-to-r from-blue-500/20 via-violet-500/20 to-amber-500/20 border border-blue-500/30 flex items-center gap-2 px-3"
                       >
-                        <span className="text-lg">{activityIcons[event.activity]}</span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{event.title}</p>
                           <p className="text-xs text-muted-foreground">{event.window.location}</p>

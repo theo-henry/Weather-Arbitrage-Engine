@@ -7,21 +7,12 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { CalendarEvent, Activity, ProtectedEventAnalysis, SuggestedAlternative } from '@/lib/types'
+import type { CalendarEvent, ProtectedEventAnalysis, SuggestedAlternative } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 
 const SLOT_HEIGHT = 48 // px per 30-min slot
 const DAY_START_HOUR = 0
-
-const activityIcons: Record<Activity, string> = {
-  run: '🏃',
-  study: '📚',
-  social: '🥂',
-  commute: '🚗',
-  photo: '📸',
-  custom: '⚙️',
-}
 
 const colorMap: Record<string, { bg: string; border: string; text: string }> = {
   blue:   { bg: 'bg-blue-500/20',   border: 'border-blue-500/40',   text: 'text-blue-700 dark:text-blue-300' },
@@ -110,9 +101,6 @@ export const CalendarEventBlock = memo(function CalendarEventBlock({
       <div className="px-1.5 py-1 h-full flex flex-col min-w-0">
         <div className="flex items-start justify-between gap-0.5">
           <div className="flex items-center gap-1 min-w-0 flex-1">
-            {event.activity && (
-              <span className="text-xs flex-shrink-0">{activityIcons[event.activity]}</span>
-            )}
             <span className={cn('font-medium truncate', isCompact ? 'text-[11px]' : 'text-xs', colors.text)}>
               {event.title}
             </span>
