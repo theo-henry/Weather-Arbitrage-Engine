@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Zap } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseConfigured, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
@@ -14,9 +14,9 @@ const DEMO_EMAIL = 'demo@weatherscheduler.com'
 const DEMO_PASSWORD = 'demo2026'
 
 function LoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
-  const next = searchParams.get('next') ?? '/dashboard'
+  const nextParam = searchParams.get('next')
+  const next = nextParam?.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/dashboard'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -42,8 +42,16 @@ function LoginForm() {
       return false
     }
 
-    router.push(next)
-    router.refresh()
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session) {
+      if (showError) setError('Login succeeded, but the session was not saved. Please try again.')
+      return false
+    }
+
+    window.location.assign(next)
     return true
   }
 

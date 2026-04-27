@@ -10,16 +10,78 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+const DEMO_EMAIL = 'demo@weatherscheduler.com'
+const DEMO_PASSWORD = 'demo2026'
+
 function SignupForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const next = searchParams.get('next') ?? '/dashboard'
+  const nextParam = searchParams.get('next')
+  const next = nextParam?.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/dashboard'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [demoLoading, setDemoLoading] = useState(false)
   const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null)
+
+  async function handleDemoCredentialsLogin({ showError = true }: { showError?: boolean } = {}) {
+    if (!isSupabaseConfigured()) {
+      if (showError) setError(SUPABASE_PUBLIC_ENV_ERROR)
+      return false
+    }
+
+    const supabase = createClient()
+    const { error } = await supabase.auth.signInWithPassword({
+      email: DEMO_EMAIL,
+      password: DEMO_PASSWORD,
+    })
+
+    if (error) {
+      if (showError) setError(error.message)
+      return false
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session) {
+      if (showError) setError('Login succeeded, but the session was not saved. Please try again.')
+      return false
+    }
+
+    window.location.assign(next)
+    return true
+  }
+
+  async function ensureDemoAccount() {
+    const res = await fetch('/api/demo-login', { method: 'POST' })
+    if (res.ok) return true
+
+    const data = await res.json().catch(() => ({}))
+    setError(data.error || 'Failed to set up demo account')
+    return false
+  }
+
+  async function handleDemoLogin() {
+    setError(null)
+    setDemoLoading(true)
+    setConfirmationEmail(null)
+    setEmail(DEMO_EMAIL)
+    setPassword(DEMO_PASSWORD)
+
+    if (await handleDemoCredentialsLogin({ showError: false })) {
+      return
+    }
+
+    if (await ensureDemoAccount()) {
+      await handleDemoCredentialsLogin()
+    }
+
+    setDemoLoading(false)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -136,10 +198,29 @@ function SignupForm() {
               </p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || demoLoading}>
               {loading ? 'Creating account…' : 'Sign up'}
             </Button>
           </form>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border/50" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-card px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={loading || demoLoading}
+            onClick={handleDemoLogin}
+          >
+            {demoLoading ? 'Logging in…' : 'Log in with Demo Account'}
+          </Button>
 
           <p className="mt-6 text-sm text-muted-foreground text-center">
             Already have an account?{' '}
