@@ -5,6 +5,8 @@ import { computeSuggestion } from './weather-suggestions';
 const DEMO_CITY: City = 'Madrid';
 const DEMO_TIME_ZONE = 'Europe/Madrid';
 const DAY_MS = 24 * 60 * 60 * 1000;
+export const DEMO_FUTURE_DAYS = 112;
+export const DEMO_MIN_FUTURE_COVERAGE_DAYS = 75;
 const DEMO_BLOCKED_ACTIVITIES: Array<keyof UserPreferences['blockedTimeRules']> = [
   'run',
   'study',
@@ -355,9 +357,40 @@ function createEvent(options: EventSeedOptions): CalendarEvent {
 }
 
 function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
-  const weekIndex = offset < 7 ? 0 : 1;
+  const weekNumber = Math.floor(offset / 7);
+  const weekIndex = weekNumber % 4;
   const weekday = getWeekdayLabel(dateKey);
   const isWeekday = !['Saturday', 'Sunday'].includes(weekday);
+  const morningRunOptions = [
+    { title: 'Morning jog — Retiro', location: 'Retiro Park' },
+    { title: 'Morning jog — Madrid Río', location: 'Madrid Río' },
+    { title: 'Easy run — Canal loop', location: 'Canal de Isabel II' },
+    { title: 'Morning shakeout — Chamberí', location: 'Chamberí' },
+  ];
+  const lunchTerraces = [
+    'La Barraca terrace',
+    'Lateral Castellana terrace',
+    'Plaza de Olavide terrace',
+    'Café Comercial patio',
+  ];
+  const saturdayRuns = [
+    { title: 'Long run — Casa de Campo', location: 'Casa de Campo' },
+    { title: 'Trail run — El Pardo', location: 'Monte de El Pardo' },
+    { title: 'Tempo run — Retiro loop', location: 'Retiro Park' },
+    { title: 'Hill repeats — Parque del Oeste', location: 'Parque del Oeste' },
+  ];
+  const saturdayPhotoSessions = [
+    { title: 'Golden hour photography', location: 'Temple of Debod' },
+    { title: 'Street photography session', location: 'Malasaña streets' },
+    { title: 'Architecture photo walk', location: 'Gran Vía' },
+    { title: 'Park portrait practice', location: 'Retiro Park' },
+  ];
+  const sundaySocialPlans = [
+    { title: 'Park brunch with friends', location: 'Retiro Park', participants: ['Paula', 'Javi'] },
+    { title: 'Picnic in El Retiro', location: 'Retiro Park', participants: ['Clara', 'Mauro'] },
+    { title: 'Outdoor tapas meetup', location: 'La Latina', participants: ['Nina', 'Marco'] },
+    { title: 'Coffee walk with Lucia', location: 'Paseo del Prado', participants: ['Lucia'] },
+  ];
 
   const events: CalendarEvent[] = [];
 
@@ -365,16 +398,17 @@ function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
   if (isWeekday) {
     // Morning jog (most weekdays except Friday)
     if (weekday !== 'Friday') {
+      const morningRun = morningRunOptions[weekIndex];
       events.push(
         createEvent({
-          title: weekIndex === 0 ? 'Morning jog — Retiro' : 'Morning jog — Madrid Río',
+          title: morningRun.title,
           dateKey,
           start: '07:00',
           end: '07:45',
           category: 'weather-sensitive',
           activity: 'run',
           color: 'amber',
-          location: weekIndex === 0 ? 'Retiro Park' : 'Madrid Río',
+          location: morningRun.location,
           notes: 'Easy 5k loop. Skip if raining.',
         }),
       );
@@ -480,7 +514,7 @@ function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
           category: 'weather-sensitive',
           activity: 'social',
           color: 'pink',
-          location: weekIndex === 0 ? 'La Barraca terrace' : 'Lateral Castellana terrace',
+          location: lunchTerraces[weekIndex],
           ...(weekday === 'Wednesday' ? { participants: ['Elena', 'Marco'] } : {}),
           notes: 'Move indoors if it rains.',
         }),
@@ -608,16 +642,18 @@ function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
 
   // ── Saturday ─────────────────────────────────────────────────────
   if (weekday === 'Saturday') {
+    const saturdayRun = saturdayRuns[weekIndex];
+    const saturdayPhoto = saturdayPhotoSessions[weekIndex];
     events.push(
       createEvent({
-        title: weekIndex === 0 ? 'Long run — Casa de Campo' : 'Trail run — El Pardo',
+        title: saturdayRun.title,
         dateKey,
         start: '08:00',
         end: '09:30',
         category: 'weather-sensitive',
         activity: 'run',
         color: 'amber',
-        location: weekIndex === 0 ? 'Casa de Campo' : 'Monte de El Pardo',
+        location: saturdayRun.location,
         notes: '12k endurance run. Move to afternoon if morning rain.',
       }),
     );
@@ -636,14 +672,14 @@ function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
     );
     events.push(
       createEvent({
-        title: weekIndex === 0 ? 'Golden hour photography' : 'Street photography session',
+        title: saturdayPhoto.title,
         dateKey,
         start: '17:00',
         end: '18:30',
         category: 'weather-sensitive',
         activity: 'photo',
         color: 'amber',
-        location: weekIndex === 0 ? 'Temple of Debod' : 'Malasaña streets',
+        location: saturdayPhoto.location,
         notes: 'Light-dependent shoot — skip if overcast.',
       }),
     );
@@ -662,17 +698,18 @@ function buildBaseDayEvents(dateKey: string, offset: number): CalendarEvent[] {
 
   // ── Sunday ───────────────────────────────────────────────────────
   if (weekday === 'Sunday') {
+    const sundaySocialPlan = sundaySocialPlans[weekIndex];
     events.push(
       createEvent({
-        title: weekIndex === 0 ? 'Park brunch with friends' : 'Picnic in El Retiro',
+        title: sundaySocialPlan.title,
         dateKey,
         start: '11:00',
         end: '12:30',
         category: 'weather-sensitive',
         activity: 'social',
         color: 'pink',
-        location: 'Retiro Park',
-        participants: weekIndex === 0 ? ['Paula', 'Javi'] : ['Clara', 'Mauro'],
+        location: sundaySocialPlan.location,
+        participants: sundaySocialPlan.participants,
         notes: 'Outdoor plan — rain forces a restaurant pivot.',
       }),
     );
@@ -885,7 +922,7 @@ export function buildDemoSeed(weatherWindows: TimeWindow[] = []): {
   preferences: UserPreferences;
   events: CalendarEvent[];
 } {
-  const futureDateKeys = buildUpcomingDateKeys(14);
+  const futureDateKeys = buildUpcomingDateKeys(DEMO_FUTURE_DAYS);
   const pastDateKeys = buildCurrentWeekPastDateKeys();
 
   // Past events fill the current week view so the calendar isn't empty

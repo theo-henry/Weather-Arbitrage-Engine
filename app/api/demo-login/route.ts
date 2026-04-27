@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { buildDemoSeed } from '@/lib/demo-seed'
+import {
+  DEMO_MIN_FUTURE_COVERAGE_DAYS,
+  buildDemoSeed,
+} from '@/lib/demo-seed'
 import { getSupabasePublicEnv, SUPABASE_PUBLIC_ENV_ERROR } from '@/lib/supabase/public-config'
 import type { CalendarEvent } from '@/lib/types'
 
@@ -132,7 +135,20 @@ export async function POST(request: Request) {
     latestEvent?.[0]?.end_time &&
     new Date(latestEvent[0].end_time) < new Date()
 
-  const shouldSeed = forceReseed || count === null || count === 0 || isStale || hasMockScoredWeatherEvents
+  const lacksFutureCoverage =
+    count !== null &&
+    count > 0 &&
+    latestEvent?.[0]?.end_time &&
+    new Date(latestEvent[0].end_time) <
+      new Date(Date.now() + DEMO_MIN_FUTURE_COVERAGE_DAYS * 24 * 60 * 60 * 1000)
+
+  const shouldSeed =
+    forceReseed ||
+    count === null ||
+    count === 0 ||
+    isStale ||
+    lacksFutureCoverage ||
+    hasMockScoredWeatherEvents
 
   if (shouldSeed) {
     // Always delete before reseeding — skipping the delete when count is 0 or null
