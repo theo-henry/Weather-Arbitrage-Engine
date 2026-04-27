@@ -9,7 +9,10 @@ import {
   BarChart3,
   Clock,
   Target,
-  Sparkles
+  Sparkles,
+  ShieldCheck,
+  CalendarCheck,
+  CloudSun,
 } from 'lucide-react'
 import { Navbar } from '@/components/navbar'
 import { Footer } from '@/components/footer'
@@ -21,14 +24,14 @@ const sections = [
   {
     icon: Zap,
     title: 'What is Weather Scheduler?',
-    content: `Weather Scheduler helps you use temporal variations in weather conditions to optimize outcomes for specific activities. Instead of asking "What's the weather?" we ask "When does the weather give me an advantage?"
+    content: `Weather Scheduler is a weather-aware calendar assistant. Instead of stopping at "What's the weather?", it helps answer "When should I do this?"
 
-Traditional weather apps provide data: temperature, humidity, wind speed. But raw data doesn't tell you when to run, when to study outdoors, or when to plan that perfect sunset dinner. Weather Scheduler transforms weather data into actionable intelligence — scoring every 30-minute window across the next 48 hours to find your optimal moment.`,
+The app combines forecast data, personal comfort settings, blocked scheduling windows, and existing calendar events. It scores upcoming 30-minute windows, filters out times you cannot use, and ranks the options that make sense for the activity you are planning.`,
   },
   {
     icon: BarChart3,
     title: 'How Scoring Works',
-    content: `Each activity has a custom scoring algorithm that weighs weather factors differently based on what matters most:
+    content: `Each activity has its own scoring profile because good weather means different things for different plans:
 
 **Running**: We prioritize temperature (ideal: 12-18°C for performance), penalize high humidity and wind based on your sensitivity settings, heavily penalize rain probability, and account for UV exposure and your time-of-day preferences.
 
@@ -36,45 +39,71 @@ Traditional weather apps provide data: temperature, humidity, wind speed. But ra
 
 **Outdoor Social**: We reward comfortable warmth (20-26°C), heavily penalize rain risk, prefer calm winds, and can boost scores during sunset hours.
 
-**Photography**: Golden hour gets maximum weight, with cloud coverage preferences for either clear skies or dramatic compositions.
+**Commute**: Rain, wind, daylight, safety, temperature, and commute mode all matter. A good car commute, bike commute, and walking commute can be different recommendations.
 
-All weights are configurable through your preference settings, letting you tune the algorithm to your personal thresholds.`,
+**Photography**: Golden hour gets high weight, with cloud coverage preferences for either clear skies or dramatic compositions.
+
+**Custom**: You can set your own temperature, wind, rain, and timing comfort thresholds.
+
+After scoring, the dashboard and assistant remove windows that overlap your blocked rules or saved calendar events before showing recommendations.`,
   },
   {
     icon: Brain,
-    title: 'Personalization (Coming Soon)',
-    content: `The next evolution of Weather Scheduler will learn from your patterns:
+    title: 'Personalization and Saved State',
+    content: `Personalization is already part of the app. Your preferences can change how the same forecast is ranked:
 
-• **Activity correlation**: If you consistently feel better running at certain temperatures, we'll adjust your personal comfort curves.
+- **Comfort rules**: Set temperature, wind, and rain thresholds per activity.
 
-• **Schedule learning**: We'll understand when you're typically free and prioritize windows that fit your routine.
+- **Sensitivity settings**: Tune wind sensitivity, rain avoidance, daylight preference, warmth preference, and time-of-day bias.
 
-• **Feedback loops**: Rate your experiences and we'll continuously improve recommendations.
+- **Commute mode**: Optimize differently for driving, biking, or walking.
 
-• **Cross-activity optimization**: Learn that you prefer morning runs followed by afternoon study sessions and optimize both together.`,
+- **Blocked windows**: Mark times that should never be suggested for an activity.
+
+Signed-in users keep their preferences and calendar events through Supabase. The demo account is seeded with preferences and sample events so Auto-Protect and the Scheduler have realistic data to analyze.`,
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Scheduling and Auto-Protect',
+    content: `Weather Scheduler is not just a recommendation page. It also helps manage the calendar around those recommendations.
+
+The Compare page lets you ask natural-language planning questions, such as "Best time for tennis tomorrow afternoon", then schedule one of the recommended cards.
+
+The Scheduler page includes a weekly calendar, manual event editing, and a chat assistant that can draft event creates, moves, and deletes. Assistant writes are confirmation-gated: the app shows the proposed operation first, and nothing is applied until you confirm.
+
+Auto-Protect scans saved weather-sensitive events. If a plan has weak weather, violates a blocked rule, or has a better same-day option, it flags the risk and suggests a safer move. For commute events, it can also suggest keeping the time but switching commute mode.`,
+  },
+  {
+    icon: CloudSun,
+    title: 'Weather Data Sources',
+    content: `Weather calls run through server-side API routes so keys stay protected.
+
+Google Weather provides current conditions and the first 48 hours of hourly forecast data. Open-Meteo extends the hourly forecast beyond that range. City search and custom city lookup use Nominatim geocoding.
+
+When Google Weather quota is exhausted, the app can fall back to the most recent saved Supabase weather snapshot for that city. If no live data or snapshot is available, the app shows an error state instead of pretending to have reliable recommendations.`,
   },
   {
     icon: Heart,
     title: 'Why This Matters',
     content: `Weather affects more than we realize:
 
-• **Productivity**: Studies show cognitive performance varies with temperature and lighting conditions.
+- **Productivity**: Focus can change with temperature, daylight, and weather distractions.
 
-• **Physical performance**: Running in optimal conditions can improve pace by 5-10%.
+- **Physical performance**: Heat, humidity, wind, rain, and UV can make the same workout feel very different.
 
-• **Mental health**: Outdoor activities in good weather correlate with better mood and reduced stress.
+- **Plans saved**: Outdoor dinners, walks, commutes, and photo sessions are easier to protect when the calendar understands weather risk.
 
-• **Plans saved**: No more rained-out picnics or windswept photos. Plan with confidence.
-
-Weather Scheduler isn't just about avoiding bad weather — it's about finding the moments where conditions actively work in your favor. It's the difference between surviving the weather and leveraging it.`,
+Weather Scheduler is not just about avoiding bad weather. It is about finding the moments where conditions actively support the thing you want to do.`,
   },
 ]
 
 const features = [
-  { icon: Clock, label: '48-Hour Analysis', description: '96 time windows scored in real-time' },
-  { icon: Target, label: 'Activity-Specific', description: 'Custom algorithms for each use case' },
-  { icon: TrendingUp, label: 'Score Comparison', description: 'See your edge vs. usual times' },
-  { icon: Sparkles, label: 'Smart Scheduling', description: 'AI assistant to book your optimal window' },
+  { icon: Clock, label: '30-Minute Windows', description: 'Upcoming forecast slots scored by activity' },
+  { icon: Target, label: 'Personal Rules', description: 'Comfort thresholds and blocked times' },
+  { icon: TrendingUp, label: 'Ranked Alternatives', description: 'Best, usual, and backup options' },
+  { icon: CalendarCheck, label: 'Conflict-Aware', description: 'Calendar events filter suggestions' },
+  { icon: ShieldCheck, label: 'Auto-Protect', description: 'Risk alerts and safer moves' },
+  { icon: Sparkles, label: 'Assistant Drafts', description: 'AI scheduling with confirmation' },
 ]
 
 export default function AboutPage() {
@@ -94,7 +123,7 @@ export default function AboutPage() {
               How It Works
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto text-balance">
-              The science and philosophy behind finding your weather edge.
+              How the app turns forecasts, preferences, and calendar context into better timing decisions.
             </p>
           </motion.div>
 
@@ -103,7 +132,7 @@ export default function AboutPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-16"
+            className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-16"
           >
             {features.map((feature, index) => {
               const Icon = feature.icon
