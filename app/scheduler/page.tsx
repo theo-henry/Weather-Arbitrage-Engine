@@ -137,7 +137,7 @@ function SchedulerContent() {
         badgeTone: 'border-red-500/30 bg-red-500/12 text-red-600 dark:text-red-300',
         summary:
           actionableCount > 0
-            ? `${highRiskCount} urgent weather conflict${highRiskCount === 1 ? '' : 's'} with safer recommendations ready.`
+            ? `${highRiskCount} urgent weather conflict${highRiskCount === 1 ? '' : 's'} with safer recommendations.`
             : `${highRiskCount} urgent weather conflict${highRiskCount === 1 ? '' : 's'} detected.`,
       }
     }
@@ -152,7 +152,7 @@ function SchedulerContent() {
         badgeTone: 'border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-300',
         summary:
           actionableCount > 0
-            ? `${actionableCount} weather-aware recommendation${actionableCount === 1 ? '' : 's'} ready to review.`
+            ? `${actionableCount} weather-aware recommendation${actionableCount === 1 ? '' : 's'} to review.`
             : `${atRiskCount} weather issue${atRiskCount === 1 ? '' : 's'} worth checking.`,
       }
     }
