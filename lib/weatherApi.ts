@@ -161,8 +161,8 @@ function mapHourToWeatherConditions(hour: Record<string, unknown>): WeatherCondi
   const cloudCover = (hour.cloudCover as number) ?? 0;
   const conditionType = (hour.weatherCondition as { type?: string })?.type ?? 'CLEAR';
 
-  // Google Weather API doesn't provide AQI — estimate based on city rush-hour patterns
-  // This is a placeholder; a real integration would use a separate AQI API
+  // Neither Google Weather nor Open-Meteo forecast responses include AQI here.
+  // Use a conservative "Good" assumption so existing AQI UI stays stable.
   const airQuality = 40;
 
   return {

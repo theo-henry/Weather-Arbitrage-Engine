@@ -18,6 +18,10 @@ export interface GoogleWeatherPayload {
   forecast: Record<string, unknown>;
   source?: 'live' | 'snapshot';
   snapshotAt?: string;
+  providers?: {
+    first48Hours: 'google-weather' | 'google-weather-snapshot';
+    extendedForecast?: 'open-meteo';
+  };
 }
 
 export class GoogleWeatherError extends Error {
@@ -39,6 +43,8 @@ const snapshots = new Map<string, SnapshotEntry>();
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const GOOGLE_FETCH_REVALIDATE_SECONDS = 60 * 60;
 const FORECAST_HOURS = 48;
+const EXTENDED_FORECAST_DAYS = 14;
+const WEATHER_TIME_ZONE = 'Europe/Madrid';
 const resolvedCityCoords = new Map<string, { lat: number; lng: number }>();
 
 function normalizeEnvValue(value: string | undefined) {
@@ -75,6 +81,7 @@ function getSnapshotPayload(payload: GoogleWeatherPayload): GoogleWeatherPayload
   return {
     current: payload.current,
     forecast: payload.forecast,
+    providers: payload.providers,
   };
 }
 
@@ -152,6 +159,229 @@ function withSnapshotMetadata(snapshot: SnapshotEntry): GoogleWeatherPayload {
     ...snapshot.payload,
     source: 'snapshot',
     snapshotAt: snapshot.fetchedAt,
+    providers: {
+      first48Hours: 'google-weather-snapshot',
+      ...(snapshot.payload.providers?.extendedForecast
+        ? { extendedForecast: snapshot.payload.providers.extendedForecast }
+        : {}),
+    },
+  };
+}
+
+async function buildSnapshotFallbackPayload(
+  city: string,
+  snapshot: SnapshotEntry,
+  coords: { lat: number; lng: number },
+) {
+  const { forecast, extendedCount } = await mergeExtendedForecast(snapshot.payload.forecast, coords);
+  const payload = withSnapshotMetadata({
+    ...snapshot,
+    payload: {
+      ...snapshot.payload,
+      forecast,
+      providers: {
+        first48Hours: 'google-weather-snapshot',
+        ...(snapshot.payload.providers?.extendedForecast || extendedCount > 0
+          ? { extendedForecast: 'open-meteo' as const }
+          : {}),
+      },
+    },
+  });
+
+  snapshots.set(getSnapshotKey(city), {
+    fetchedAt: snapshot.fetchedAt,
+    payload: getSnapshotPayload(payload),
+  });
+
+  return payload;
+}
+
+function getTimeZoneOffsetSeconds(timeZone: string, date: Date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'shortOffset',
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
+  );
+  const offset = parts.timeZoneName ?? 'GMT';
+  const match = offset.match(/^GMT(?:([+-])(\d{1,2})(?::(\d{2}))?)?$/);
+  const [, signRaw, hoursRaw, minutesRaw] = match ?? [];
+  if (!signRaw) return 0;
+
+  const sign = signRaw === '-' ? -1 : 1;
+  const hours = Number(hoursRaw ?? 0);
+  const minutes = Number(minutesRaw ?? 0);
+  return sign * (hours * 60 + minutes) * 60;
+}
+
+function parseLocalDateTime(value: string) {
+  const [datePart, timePart = '00:00'] = value.split('T');
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hours, minutes] = timePart.split(':').map(Number);
+
+  return {
+    year,
+    month,
+    day,
+    hours: hours ?? 0,
+    minutes: minutes ?? 0,
+    seconds: 0,
+  };
+}
+
+function localDateTimeToUtc(value: string, timeZone: string) {
+  const parts = parseLocalDateTime(value);
+  const utcGuess = new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hours, parts.minutes, parts.seconds),
+  );
+  const offsetSeconds = getTimeZoneOffsetSeconds(timeZone, utcGuess);
+  const date = new Date(utcGuess.getTime() - offsetSeconds * 1000);
+
+  return { date, parts, offsetSeconds };
+}
+
+function mapOpenMeteoWeatherCode(code: number): string {
+  if (code === 0) return 'CLEAR';
+  if (code === 1) return 'MOSTLY_CLEAR';
+  if (code === 2) return 'PARTLY_CLOUDY';
+  if (code === 3 || code === 45 || code === 48) return 'CLOUDY';
+  if (code >= 51 && code <= 57) return 'DRIZZLE';
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return 'RAIN';
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'SNOW';
+  if (code >= 95 && code <= 99) return 'THUNDERSTORM';
+
+  return 'PARTLY_CLOUDY';
+}
+
+function getNumericValue(values: unknown, index: number, fallback: number) {
+  if (!Array.isArray(values)) return fallback;
+  const value = Number(values[index]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+async function fetchOpenMeteoExtendedForecast(
+  coords: { lat: number; lng: number },
+  afterDate: Date,
+): Promise<Record<string, unknown>[]> {
+  const url = new URL('https://api.open-meteo.com/v1/forecast');
+  url.searchParams.set('latitude', coords.lat.toString());
+  url.searchParams.set('longitude', coords.lng.toString());
+  url.searchParams.set(
+    'hourly',
+    [
+      'temperature_2m',
+      'apparent_temperature',
+      'relative_humidity_2m',
+      'precipitation_probability',
+      'precipitation',
+      'wind_speed_10m',
+      'uv_index',
+      'cloud_cover',
+      'weather_code',
+    ].join(','),
+  );
+  url.searchParams.set('forecast_days', EXTENDED_FORECAST_DAYS.toString());
+  url.searchParams.set('timezone', WEATHER_TIME_ZONE);
+  url.searchParams.set('wind_speed_unit', 'kmh');
+  url.searchParams.set('precipitation_unit', 'mm');
+
+  const res = await fetch(url.toString(), {
+    next: { revalidate: GOOGLE_FETCH_REVALIDATE_SECONDS },
+  });
+
+  if (!res.ok) {
+    console.error('Open-Meteo extended forecast failed:', await res.text());
+    return [];
+  }
+
+  const data = (await res.json()) as { hourly?: Record<string, unknown> };
+  const hourly = data.hourly;
+  const times = hourly?.time;
+  if (!hourly || !Array.isArray(times)) return [];
+
+  return times.flatMap((time, index) => {
+    if (typeof time !== 'string') return [];
+
+    const { date, parts, offsetSeconds } = localDateTimeToUtc(time, WEATHER_TIME_ZONE);
+    if (date <= afterDate) return [];
+
+    const temperature = getNumericValue(hourly.temperature_2m, index, 20);
+    const feelsLike = getNumericValue(hourly.apparent_temperature, index, temperature);
+    const humidity = getNumericValue(hourly.relative_humidity_2m, index, 55);
+    const precipitationProbability = getNumericValue(hourly.precipitation_probability, index, 0);
+    const precipitation = getNumericValue(hourly.precipitation, index, 0);
+    const windSpeed = getNumericValue(hourly.wind_speed_10m, index, 10);
+    const uvIndex = getNumericValue(hourly.uv_index, index, 0);
+    const cloudCover = getNumericValue(hourly.cloud_cover, index, 30);
+    const weatherCode = getNumericValue(hourly.weather_code, index, 1);
+
+    return {
+      displayDateTime: {
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+        hours: parts.hours,
+        minutes: parts.minutes,
+        seconds: 0,
+        utcOffset: `${offsetSeconds}s`,
+      },
+      interval: { startTime: date.toISOString() },
+      temperature: { degrees: temperature },
+      feelsLikeTemperature: { degrees: feelsLike },
+      relativeHumidity: humidity,
+      precipitation: {
+        probability: { percent: precipitationProbability },
+        qpf: { quantity: precipitation },
+      },
+      wind: { speed: { value: windSpeed } },
+      uvIndex,
+      cloudCover,
+      weatherCondition: { type: mapOpenMeteoWeatherCode(weatherCode) },
+      provider: 'open-meteo',
+    };
+  });
+}
+
+function getLastForecastDate(forecast: Record<string, unknown>) {
+  const forecastHours = (forecast.forecastHours as Record<string, unknown>[] | undefined) ?? [];
+  let latest: Date | null = null;
+
+  for (const hour of forecastHours) {
+    const interval = hour.interval as { startTime?: string } | undefined;
+    const rawDate = interval?.startTime;
+    if (!rawDate) continue;
+
+    const date = new Date(rawDate);
+    if (!Number.isFinite(date.getTime())) continue;
+    if (!latest || date > latest) latest = date;
+  }
+
+  return latest;
+}
+
+async function mergeExtendedForecast(
+  forecast: Record<string, unknown>,
+  coords: { lat: number; lng: number },
+) {
+  const forecastHours = (forecast.forecastHours as Record<string, unknown>[] | undefined) ?? [];
+  const lastGoogleDate = getLastForecastDate(forecast);
+  if (!lastGoogleDate) {
+    return { forecast, extendedCount: 0 };
+  }
+
+  const extendedHours = await fetchOpenMeteoExtendedForecast(coords, lastGoogleDate);
+  if (extendedHours.length === 0) {
+    return { forecast, extendedCount: 0 };
+  }
+
+  return {
+    forecast: {
+      ...forecast,
+      forecastHours: [...forecastHours, ...extendedHours],
+    },
+    extendedCount: extendedHours.length,
   };
 }
 
@@ -277,7 +507,7 @@ export async function fetchGoogleWeather(city: string): Promise<GoogleWeatherPay
   currentUrl.searchParams.set('unitsSystem', 'METRIC');
 
   try {
-    const [currentRes, forecast] = await Promise.all([
+    const [currentRes, forecastResult] = await Promise.all([
       fetch(currentUrl.toString(), {
         next: { revalidate: GOOGLE_FETCH_REVALIDATE_SECONDS },
       }),
@@ -295,10 +525,15 @@ export async function fetchGoogleWeather(city: string): Promise<GoogleWeatherPay
       );
     }
 
+    const { forecast, extendedCount } = await mergeExtendedForecast(forecastResult, coords);
     const payload = {
       current: await currentRes.json(),
       forecast,
       source: 'live' as const,
+      providers: {
+        first48Hours: 'google-weather' as const,
+        ...(extendedCount > 0 ? { extendedForecast: 'open-meteo' as const } : {}),
+      },
     };
 
     cache.set(normalizedCity, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
@@ -308,7 +543,7 @@ export async function fetchGoogleWeather(city: string): Promise<GoogleWeatherPay
     if (error instanceof GoogleWeatherError && error.status === 429) {
       const snapshot = await loadWeatherSnapshot(normalizedCity);
       if (snapshot) {
-        const payload = withSnapshotMetadata(snapshot);
+        const payload = await buildSnapshotFallbackPayload(normalizedCity, snapshot, coords);
         cache.set(normalizedCity, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
         return payload;
       }
