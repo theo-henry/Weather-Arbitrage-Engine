@@ -13,8 +13,13 @@ import { TimelineChart } from '@/components/timeline-chart'
 import { InsightPanel } from '@/components/insight-panel'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { getTopWindows, getWindowAtTime } from '@/lib/weather-window-utils'
-import { isTimeWindowBlockedForAnyActivity } from '@/lib/preferences'
+import {
+  getTopWindows,
+  getWindowAtTime,
+  getWindowEnd,
+  getWindowStart,
+  isWindowBlockedByPreferences,
+} from '@/lib/weather-window-utils'
 import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import { doesWindowConflictWithEvents } from '@/lib/weather-suggestions'
 import { useWeatherData } from '@/hooks/use-weather-data'
@@ -40,6 +45,7 @@ export default function DashboardPage() {
   const [preferences, setPreferences, preferencesReady] = usePreferences()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { events: calendarEvents } = useCalendarEvents()
+  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
 
   const { windows, loading, error, isLive, source, snapshotAt } = useWeatherData(preferences.city)
 
@@ -48,9 +54,9 @@ export default function DashboardPage() {
   const eligibleWindows = useMemo(() => {
     if (!preferencesReady) return []
     return windows
-      .filter((window) => !isTimeWindowBlockedForAnyActivity(preferences, window))
+      .filter((window) => !isWindowBlockedByPreferences(preferences, window, timezone))
       .filter((window) => !doesWindowConflictWithEvents(window, calendarEvents))
-  }, [windows, preferences, preferencesReady, calendarEvents])
+  }, [windows, preferences, preferencesReady, calendarEvents, timezone])
 
   // Recalculate scores based on preferences only after blocked windows have been excluded.
   const scoredWindows = useMemo(() => applyPreferenceScoresToWindows(eligibleWindows, preferences), [eligibleWindows, preferences])
@@ -79,15 +85,11 @@ export default function DashboardPage() {
       router.push('/signup?next=/scheduler')
       return
     }
-    if (!bestWindow) return
+    if (!bestWindow || isWindowBlockedByPreferences(preferences, bestWindow, timezone)) return
 
     // Build a CalendarEvent from the recommended window
-    const startDate = new Date(bestWindow.date)
-    const [sh, sm] = bestWindow.startTime.split(':').map(Number)
-    startDate.setHours(sh, sm, 0, 0)
-    const endDate = new Date(bestWindow.date)
-    const [eh, em] = bestWindow.endTime.split(':').map(Number)
-    endDate.setHours(eh, em, 0, 0)
+    const startDate = getWindowStart(bestWindow)
+    const endDate = getWindowEnd(bestWindow)
 
     const event: CalendarEvent = {
       id: `dash-${Date.now()}`,
@@ -107,7 +109,7 @@ export default function DashboardPage() {
     } catch {}
 
     router.push('/scheduler')
-  }, [user, router, bestWindow, preferences.activity])
+  }, [user, router, bestWindow, preferences, timezone])
 
   const PreferencePanelContent = (
     <PreferencePanel

@@ -106,7 +106,7 @@ export function TimelineChart({
       className={cn('w-full', className)}
     >
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-        48-Hour Score Timeline
+        Score Timeline
       </h3>
       
       <div className="h-[300px] w-full">

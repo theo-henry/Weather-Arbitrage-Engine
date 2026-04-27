@@ -1,4 +1,23 @@
-import type { TimeWindow } from './types';
+import { isTimeRangeBlockedForAnyActivity } from './preferences';
+import type { TimeWindow, UserPreferences } from './types';
+
+const WINDOW_DURATION_MINUTES = 30;
+
+export function getWindowStart(window: TimeWindow): Date {
+  return new Date(window.date);
+}
+
+export function getWindowEnd(window: TimeWindow): Date {
+  return new Date(getWindowStart(window).getTime() + WINDOW_DURATION_MINUTES * 60 * 1000);
+}
+
+export function isWindowBlockedByPreferences(
+  preferences: UserPreferences,
+  window: TimeWindow,
+  timezone: string,
+): boolean {
+  return isTimeRangeBlockedForAnyActivity(preferences, getWindowStart(window), getWindowEnd(window), timezone);
+}
 
 export function getBestWindow(windows: TimeWindow[], activity: keyof TimeWindow['scores']): TimeWindow | undefined {
   return windows.reduce<TimeWindow | undefined>(
