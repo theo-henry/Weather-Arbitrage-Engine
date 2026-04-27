@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "check:scheduler": "node scripts/check-scheduler-regression.mjs",
     "start": "next start",
     "lint": "eslint ."
   },

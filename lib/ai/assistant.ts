@@ -2,6 +2,8 @@ import type { AssistantRequest, AssistantResponse, CompareRecommendation, Pendin
 import { formatBlockedTimeRule, getActivityProfile } from '@/lib/preferences'
 import { buildAssistantTools } from './tools'
 import { getLLMProvider, type LLMContent } from './provider'
+import { answerDeterministicSchedulingIntent } from './deterministic-scheduler'
+import { parseDeterministicSchedulingIntent } from './scheduling-intent'
 
 interface LatestUserMessageHints {
   text: string
@@ -186,6 +188,30 @@ function toLLMContents(messages: AssistantRequest['messages']): LLMContent[] {
 }
 
 export async function runAssistant(request: AssistantRequest): Promise<AssistantResponse> {
+  const latestUserMessage = [...request.messages].reverse().find((message) => message.role === 'user' && message.content.trim())
+  const deterministicIntent =
+    request.mode !== 'compare' && (!request.pendingOperations || request.pendingOperations.length === 0) && latestUserMessage
+      ? parseDeterministicSchedulingIntent(latestUserMessage.content, new Date(request.now), request.timezone)
+      : null
+
+  if (deterministicIntent) {
+    const result = answerDeterministicSchedulingIntent(deterministicIntent, {
+      events: request.events,
+      windows: request.windows,
+      preferences: request.preferences,
+      timezone: request.timezone,
+    })
+
+    return {
+      message: result.message,
+      pendingOperations: result.pendingOperations,
+      requiresConfirmation: result.requiresConfirmation,
+      referencedEventIds: [],
+      updatedPreferences: null,
+      compareRecommendation: null,
+    }
+  }
+
   const provider = getLLMProvider()
   const tools = buildAssistantTools({
     city: request.city,

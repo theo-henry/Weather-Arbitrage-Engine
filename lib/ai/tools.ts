@@ -26,10 +26,10 @@ import type {
 import { computeProtectedEventAnalyses } from '@/lib/weather-suggestions'
 import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import type { LLMToolDefinition } from './provider'
+import { matchesPreferredTimeBucket, type PreferredTime } from '@/lib/time-windows'
 
 type ScorableActivity = keyof TimeWindow['scores']
 type RelativeDay = 'today' | 'tomorrow'
-type PreferredTime = 'morning' | 'afternoon' | 'evening' | 'any'
 
 interface ToolContext {
   city: City
@@ -260,23 +260,8 @@ function getAverageMetrics(windows: TimeWindow[]) {
   }
 }
 
-function getTimeBucket(date: Date, timezone: string): PreferredTime {
-  const hour = Number(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      hour: '2-digit',
-      hour12: false,
-    }).format(date)
-  )
-
-  if (hour < 12) return 'morning'
-  if (hour < 17) return 'afternoon'
-  return 'evening'
-}
-
 function matchesPreferredTime(date: Date, preferredTime: PreferredTime | undefined, timezone: string) {
-  if (!preferredTime || preferredTime === 'any') return true
-  return getTimeBucket(date, timezone) === preferredTime
+  return matchesPreferredTimeBucket(date, preferredTime, timezone)
 }
 
 function matchesDateRange(date: Date, startDate: string | undefined, endDate: string | undefined, timezone: string) {
