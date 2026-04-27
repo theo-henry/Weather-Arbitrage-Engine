@@ -35,7 +35,7 @@ const EVENT_COLORS: { value: EventColor; label: string; class: string }[] = [
   { value: 'pink', label: 'Pink', class: 'bg-pink-500' },
 ]
 
-// Generate time options at 30-min increments across the full day.
+// Generate visible suggestions at 30-min increments across the full day.
 const BASE_TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const totalMinutes = i * 30
   const h = Math.floor(totalMinutes / 60)
@@ -43,10 +43,17 @@ const BASE_TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const value = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
   return { value, label: formatTimeLabel(value) }
 })
+const TIME_SUGGESTION_LIST_ID = 'event-time-suggestions'
 
 function timeToMinutes(value: string) {
   const [hours, minutes] = value.split(':').map(Number)
   return hours * 60 + minutes
+}
+
+function isQuarterHourTimeString(value: string) {
+  if (!/^\d{2}:\d{2}$/.test(value)) return false
+  const [hours, minutes] = value.split(':').map(Number)
+  return hours >= 0 && hours <= 23 && [0, 15, 30, 45].includes(minutes)
 }
 
 function formatTimeLabel(value: string) {
@@ -54,18 +61,6 @@ function formatTimeLabel(value: string) {
   const date = new Date()
   date.setHours(hours, minutes, 0, 0)
   return format(date, 'h:mm a')
-}
-
-function buildTimeOptions(extraValues: string[] = []) {
-  const seen = new Set<string>()
-
-  return [...BASE_TIME_OPTIONS, ...extraValues.filter(Boolean).map((value) => ({ value, label: formatTimeLabel(value) }))]
-    .filter((option) => {
-      if (seen.has(option.value)) return false
-      seen.add(option.value)
-      return true
-    })
-    .sort((a, b) => timeToMinutes(a.value) - timeToMinutes(b.value))
 }
 
 function getNextTimeValue(value: string) {
@@ -105,21 +100,10 @@ export function EventDialog({
   const [notes, setNotes] = useState('')
   const [color, setColor] = useState<EventColor>('blue')
 
-  const startTimeOptions = useMemo(
-    () =>
-      buildTimeOptions([startTime]).filter(
-        (option) => timeToMinutes(option.value) < 23 * 60 + 30 || option.value === startTime
-      ),
-    [startTime]
-  )
-
-  const endTimeOptions = useMemo(
-    () =>
-      buildTimeOptions([startTime, endTime]).filter(
-        (option) => timeToMinutes(option.value) > timeToMinutes(startTime)
-      ),
-    [startTime, endTime]
-  )
+  const startTimeValid = isQuarterHourTimeString(startTime)
+  const endTimeValid = isQuarterHourTimeString(endTime)
+  const timeRangeValid =
+    startTimeValid && endTimeValid && timeToMinutes(endTime) > timeToMinutes(startTime)
 
   // Populate form when event changes
   useEffect(() => {
@@ -143,17 +127,18 @@ export function EventDialog({
   }, [event])
 
   useEffect(() => {
+    if (!startTimeValid || !endTimeValid) return
     if (timeToMinutes(endTime) > timeToMinutes(startTime)) return
 
     const nextTime = getNextTimeValue(startTime)
     if (nextTime !== endTime) {
       setEndTime(nextTime)
     }
-  }, [startTime, endTime])
+  }, [startTime, endTime, startTimeValid, endTimeValid])
 
   // Weather score preview for weather-sensitive events
   const weatherPreview = useMemo(() => {
-    if (category !== 'weather-sensitive' || !activity || !date || !startTime) return null
+    if (category !== 'weather-sensitive' || !activity || !date || !timeRangeValid) return null
 
     // Find windows overlapping this time
     const eventStart = new Date(`${date}T${startTime}:00`)
@@ -177,10 +162,10 @@ export function EventDialog({
     const avgScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
 
     return { score: avgScore, slots: overlapping.length }
-  }, [category, activity, date, startTime, endTime, windows])
+  }, [category, activity, date, startTime, endTime, timeRangeValid, windows])
 
   const handleSave = () => {
-    if (!title.trim() || !date) return
+    if (!title.trim() || !date || !timeRangeValid) return
 
     const startDate = new Date(`${date}T${startTime}:00`)
     const endDate = new Date(`${date}T${endTime}:00`)
@@ -236,6 +221,11 @@ export function EventDialog({
 
           {/* Date and Time */}
           <div className="grid grid-cols-3 gap-3">
+            <datalist id={TIME_SUGGESTION_LIST_ID}>
+              {BASE_TIME_OPTIONS.map((t) => (
+                <option key={t.value} value={t.value} label={t.label} />
+              ))}
+            </datalist>
             <div className="space-y-1.5">
               <Label htmlFor="date">Date</Label>
               <Input
@@ -246,36 +236,35 @@ export function EventDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Start</Label>
-              <Select value={startTime} onValueChange={setStartTime}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {startTimeOptions.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="start-time">Start</Label>
+              <Input
+                id="start-time"
+                list={TIME_SUGGESTION_LIST_ID}
+                inputMode="numeric"
+                placeholder="09:00"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className={cn('h-9', startTime && !startTimeValid && 'border-red-500/60')}
+              />
             </div>
             <div className="space-y-1.5">
-              <Label>End</Label>
-              <Select value={endTime} onValueChange={setEndTime}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {endTimeOptions.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="end-time">End</Label>
+              <Input
+                id="end-time"
+                list={TIME_SUGGESTION_LIST_ID}
+                inputMode="numeric"
+                placeholder="10:00"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className={cn('h-9', endTime && (!endTimeValid || !timeRangeValid) && 'border-red-500/60')}
+              />
             </div>
           </div>
+          {(!startTimeValid || !endTimeValid || !timeRangeValid) && (
+            <p className="text-xs text-red-600 dark:text-red-300">
+              Use 15-minute times like 09:00, 09:15, 09:30, or 09:45, with the end after the start.
+            </p>
+          )}
 
           {/* Category */}
           <div className="space-y-1.5">
@@ -435,7 +424,7 @@ export function EventDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleSave} disabled={!title.trim() || !date}>
+          <Button type="button" onClick={handleSave} disabled={!title.trim() || !date || !timeRangeValid}>
             {isEditing ? 'Save Changes' : 'Create Event'}
           </Button>
         </DialogFooter>

@@ -24,6 +24,7 @@ import type {
   WeekdayKey,
 } from '@/lib/types'
 import { computeProtectedEventAnalyses } from '@/lib/weather-suggestions'
+import { applyPreferenceScoresToWindows } from '@/lib/scoring'
 import type { LLMToolDefinition } from './provider'
 
 type ScorableActivity = keyof TimeWindow['scores']
@@ -56,8 +57,114 @@ const DEFAULT_COLORS: Record<string, EventColor> = {
   custom: 'blue',
 }
 
+function normalizeActivityAlias(value: unknown): Activity | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase()
+
+  if (normalized === 'flight') return 'commute'
+  if (normalized.includes('photo') || normalized.includes('camera') || normalized.includes('sunset')) return 'photo'
+  if (
+    normalized.includes('walk') ||
+    normalized.includes('bike') ||
+    normalized.includes('cycling') ||
+    normalized.includes('cycle') ||
+    normalized.includes('commute') ||
+    normalized.includes('drive') ||
+    normalized.includes('driving') ||
+    normalized.includes('travel') ||
+    normalized.includes('transit')
+  ) {
+    return 'commute'
+  }
+  if (
+    normalized.includes('run') ||
+    normalized.includes('jog') ||
+    normalized.includes('hike') ||
+    normalized.includes('workout') ||
+    normalized.includes('exercise') ||
+    normalized.includes('tennis')
+  ) {
+    return 'run'
+  }
+  if (
+    normalized.includes('study') ||
+    normalized.includes('read') ||
+    normalized.includes('reading') ||
+    normalized.includes('focus') ||
+    normalized.includes('work') ||
+    normalized.includes('laptop') ||
+    normalized.includes('write') ||
+    normalized.includes('writing')
+  ) {
+    return 'study'
+  }
+  if (
+    normalized.includes('social') ||
+    normalized.includes('dinner') ||
+    normalized.includes('drinks') ||
+    normalized.includes('picnic') ||
+    normalized.includes('date') ||
+    normalized.includes('friends') ||
+    normalized.includes('terrace') ||
+    normalized.includes('market') ||
+    normalized.includes('park')
+  ) {
+    return 'social'
+  }
+
+  if (
+    normalized === 'run' ||
+    normalized === 'study' ||
+    normalized === 'social' ||
+    normalized === 'commute' ||
+    normalized === 'photo' ||
+    normalized === 'custom'
+  ) {
+    return normalized
+  }
+
+  return undefined
+}
+
+function normalizeScorableActivity(value: unknown): ScorableActivity | undefined {
+  const activity = normalizeActivityAlias(value)
+  return activity && SCORABLE_ACTIVITIES.includes(activity as ScorableActivity)
+    ? (activity as ScorableActivity)
+    : undefined
+}
+
+function normalizeCommuteMode(value: unknown): CommuteMode | undefined {
+  if (value === 'car' || value === 'bike' || value === 'walk') return value
+  if (typeof value !== 'string') return undefined
+  const normalized = value.toLowerCase()
+  if (normalized.includes('walk') || normalized.includes('stroll')) return 'walk'
+  if (normalized.includes('bike') || normalized.includes('cycl')) return 'bike'
+  if (normalized.includes('drive') || normalized.includes('car')) return 'car'
+  return undefined
+}
+
+function getScoredWindowsForActivity(
+  windows: TimeWindow[],
+  preferences: UserPreferences,
+  activity: ScorableActivity | undefined | null,
+  commuteMode: CommuteMode | undefined,
+) {
+  if (activity !== 'commute' || !commuteMode) return windows
+
+  return applyPreferenceScoresToWindows(windows, {
+    ...preferences,
+    activityProfiles: {
+      ...preferences.activityProfiles,
+      commute: {
+        ...(preferences.activityProfiles.commute ?? {}),
+        commuteMode,
+      },
+    },
+  })
+}
+
 function isScorableActivity(value: unknown): value is ScorableActivity {
-  return typeof value === 'string' && SCORABLE_ACTIVITIES.includes(value as ScorableActivity)
+  return !!normalizeScorableActivity(value)
 }
 
 function getDateKey(date: Date, timezone: string): string {
@@ -269,7 +376,7 @@ function isActivity(value: unknown): value is Activity {
 }
 
 function resolveSchedulingActivity(activity: unknown, context: ToolContext): Activity {
-  return isActivity(activity) ? activity : context.preferences.activity
+  return normalizeActivityAlias(activity) ?? context.preferences.activity
 }
 
 function isWeekday(value: unknown): value is WeekdayKey {
@@ -362,7 +469,11 @@ function getToolDeclarations(): LLMToolDefinition[] {
         properties: {
           relative_day: { type: 'string', enum: ['today', 'tomorrow'] },
           title_query: { type: 'string' },
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
+          activity: {
+            type: 'string',
+            enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'],
+            description: 'Closest settings activity profile. Use commute for walk/walking/bike/biking/cycling/driving/travel.',
+          },
           limit: { type: 'integer' },
         },
       },
@@ -383,26 +494,39 @@ function getToolDeclarations(): LLMToolDefinition[] {
     {
       name: 'get_weather_summary',
       description:
-        'Summarize weather and optional activity suitability for a given time range or part of the day. Activity bestWindow results exclude blocked scheduling windows.',
+        'Summarize weather and optional activity suitability for a given time range or part of the day. Map user activity words to the closest scored profile before calling: walk, walking, bike, biking, cycling, driving, travel -> commute; jog, hike, workout, tennis -> run; photo walk or sunset photos -> photo. Activity bestWindow results exclude blocked scheduling windows.',
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo'] },
+          activity: {
+            type: 'string',
+            enum: ['run', 'study', 'social', 'commute', 'photo'],
+            description: 'Closest scored activity profile. Use commute for walk/walking/bike/biking/cycling/driving/travel.',
+          },
           start_time: { type: 'string', description: 'ISO timestamp' },
           end_time: { type: 'string', description: 'ISO timestamp' },
           relative_day: { type: 'string', enum: ['today', 'tomorrow'] },
           preferred_time: { type: 'string', enum: ['morning', 'afternoon', 'evening', 'any'] },
+          commute_mode: {
+            type: 'string',
+            enum: ['car', 'bike', 'walk'],
+            description: 'Use when activity is commute and the user specifies walking, biking/cycling, or driving.',
+          },
         },
       },
     },
     {
       name: 'find_optimal_slots',
       description:
-        'Find the best conflict-free and preference-safe weather windows for a requested activity and duration when the user asks for the best time or wants alternatives. This never returns slots that overlap blocked scheduling windows. Do not use this to silently override an explicitly requested clock time.',
+        'Find the best conflict-free and preference-safe weather windows for a requested activity and exact duration in minutes when the user asks for the best time or wants alternatives. Map user activity words to the closest scored profile before calling: walk, walking, bike, biking, cycling, driving, travel -> commute; jog, hike, workout, tennis -> run; photo walk or sunset photos -> photo. Returned event ranges preserve duration_minutes exactly, even when weather scoring uses overlapping 30-minute forecast windows. This never returns slots that overlap blocked scheduling windows. Do not use this to silently override an explicitly requested clock time.',
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo'] },
+          activity: {
+            type: 'string',
+            enum: ['run', 'study', 'social', 'commute', 'photo'],
+            description: 'Closest scored activity profile. Use commute for walk/walking/bike/biking/cycling/driving/travel.',
+          },
           requested_activity_label: {
             type: 'string',
             description: 'The user-facing activity name, especially when mapping a custom activity to a scored profile.',
@@ -412,6 +536,11 @@ function getToolDeclarations(): LLMToolDefinition[] {
           start_date: { type: 'string', description: 'YYYY-MM-DD in the user timezone' },
           end_date: { type: 'string', description: 'YYYY-MM-DD in the user timezone' },
           preferred_time: { type: 'string', enum: ['morning', 'afternoon', 'evening', 'any'] },
+          commute_mode: {
+            type: 'string',
+            enum: ['car', 'bike', 'walk'],
+            description: 'Use walk for walking requests, bike for biking/cycling requests, and car for driving requests.',
+          },
           limit: { type: 'integer' },
         },
         required: ['activity', 'duration_minutes'],
@@ -420,13 +549,22 @@ function getToolDeclarations(): LLMToolDefinition[] {
     {
       name: 'score_time_range',
       description:
-        'Score a specific time range for a weather-scored activity. Use this to evaluate an explicitly requested time before drafting a weather-sensitive event at that time.',
+        'Score a specific time range for a weather-scored activity. Map aliases first: walk, walking, bike, biking, cycling, driving, travel -> commute; jog, hike, workout, tennis -> run; photo walk or sunset photos -> photo. Use this to evaluate an explicitly requested time before drafting a weather-sensitive event at that time.',
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo'] },
+          activity: {
+            type: 'string',
+            enum: ['run', 'study', 'social', 'commute', 'photo'],
+            description: 'Closest scored activity profile. Use commute for walk/walking/bike/biking/cycling/driving/travel.',
+          },
           start_time: { type: 'string', description: 'ISO timestamp' },
           end_time: { type: 'string', description: 'ISO timestamp' },
+          commute_mode: {
+            type: 'string',
+            enum: ['car', 'bike', 'walk'],
+            description: 'Use when activity is commute and the user specifies walking, biking/cycling, or driving.',
+          },
         },
         required: ['activity', 'start_time', 'end_time'],
       },
@@ -448,7 +586,11 @@ function getToolDeclarations(): LLMToolDefinition[] {
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
+          activity: {
+            type: 'string',
+            enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'],
+            description: 'Closest calendar activity profile. Use commute for walk/walking/bike/biking/cycling/driving/travel.',
+          },
         },
       },
     },
@@ -459,7 +601,11 @@ function getToolDeclarations(): LLMToolDefinition[] {
       parameters: {
         type: 'object',
         properties: {
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
+          activity: {
+            type: 'string',
+            enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'],
+            description: 'Closest calendar activity profile. Use commute for walk/walking/bike/biking/cycling/driving/travel.',
+          },
           set_selected_activity: { type: 'boolean' },
           city: { type: 'string', description: 'City name' },
           usual_time: { type: 'string', description: 'HH:MM' },
@@ -520,7 +666,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
     {
       name: 'draft_create_event',
       description:
-        'Draft a new calendar event proposal. This does not apply the change. The tool rejects drafts that overlap blocked scheduling windows. If the user gave an explicit time, preserve that requested time unless there is a conflict, blocked preference, or the user asked for a better slot.',
+        'Draft a new calendar event proposal. This does not apply the change. The tool rejects drafts that overlap blocked scheduling windows. Map aliases first: walk, walking, bike, biking, cycling, driving, travel -> commute; jog, hike, workout, tennis -> run; photo walk or sunset photos -> photo. If the user gave an explicit time, preserve that requested time unless there is a conflict, blocked preference, or the user asked for a better slot.',
       parameters: {
         type: 'object',
         properties: {
@@ -528,7 +674,16 @@ function getToolDeclarations(): LLMToolDefinition[] {
           start_time: { type: 'string', description: 'ISO timestamp' },
           end_time: { type: 'string', description: 'ISO timestamp' },
           category: { type: 'string', enum: ['weather-sensitive', 'indoor'] },
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
+          activity: {
+            type: 'string',
+            enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'],
+            description: 'Closest calendar activity profile. Use commute for walk/walking/bike/biking/cycling/driving/travel.',
+          },
+          commute_mode: {
+            type: 'string',
+            enum: ['car', 'bike', 'walk'],
+            description: 'Use when activity is commute and the user specifies walking, biking/cycling, or driving.',
+          },
           color: { type: 'string', enum: ['blue', 'green', 'amber', 'red', 'violet', 'pink'] },
           location: { type: 'string' },
           participants: { type: 'array', items: { type: 'string' } },
@@ -540,7 +695,7 @@ function getToolDeclarations(): LLMToolDefinition[] {
     {
       name: 'draft_update_event',
       description:
-        'Draft an update to an existing calendar event. This does not apply the change. The tool rejects updates that overlap blocked scheduling windows. If the user gave an explicit new time, preserve it unless there is a conflict, blocked preference, or the user asked for a better slot.',
+        'Draft an update to an existing calendar event. This does not apply the change. The tool rejects updates that overlap blocked scheduling windows. Map aliases first: walk, walking, bike, biking, cycling, driving, travel -> commute; jog, hike, workout, tennis -> run; photo walk or sunset photos -> photo. If the user gave an explicit new time, preserve it unless there is a conflict, blocked preference, or the user asked for a better slot.',
       parameters: {
         type: 'object',
         properties: {
@@ -549,7 +704,16 @@ function getToolDeclarations(): LLMToolDefinition[] {
           start_time: { type: 'string', description: 'ISO timestamp' },
           end_time: { type: 'string', description: 'ISO timestamp' },
           category: { type: 'string', enum: ['weather-sensitive', 'indoor'] },
-          activity: { type: 'string', enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'] },
+          activity: {
+            type: 'string',
+            enum: ['run', 'study', 'social', 'commute', 'photo', 'custom'],
+            description: 'Closest calendar activity profile. Use commute for walk/walking/bike/biking/cycling/driving/travel.',
+          },
+          commute_mode: {
+            type: 'string',
+            enum: ['car', 'bike', 'walk'],
+            description: 'Use when activity is commute and the user specifies walking, biking/cycling, or driving.',
+          },
           color: { type: 'string', enum: ['blue', 'green', 'amber', 'red', 'violet', 'pink'] },
           location: { type: 'string' },
           participants: { type: 'array', items: { type: 'string' } },
@@ -634,12 +798,14 @@ function executeFindEvents(args: Record<string, unknown>, context: ToolContext):
 
 function executeGetWeatherSummary(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
   let relevantWindows: TimeWindow[] = []
-  const activity = isScorableActivity(args.activity) ? args.activity : null
+  const activity = normalizeScorableActivity(args.activity) ?? null
+  const commuteMode = normalizeCommuteMode(args.commute_mode) ?? normalizeCommuteMode(args.activity)
+  const scoredWindows = getScoredWindowsForActivity(context.windows, context.preferences, activity, commuteMode)
 
   if (typeof args.start_time === 'string' && typeof args.end_time === 'string') {
     const startTime = new Date(args.start_time)
     const endTime = new Date(args.end_time)
-    relevantWindows = getOverlappingWindows(startTime, endTime, context.windows)
+    relevantWindows = getOverlappingWindows(startTime, endTime, scoredWindows)
     const blocked = activity
       ? buildAnyBlockedPreferenceMessage(context.preferences, startTime, endTime, context.timezone)
       : null
@@ -657,7 +823,7 @@ function executeGetWeatherSummary(args: Record<string, unknown>, context: ToolCo
   } else {
     const relativeDayKey = resolveRelativeDay(args.relative_day as RelativeDay | undefined, context.now, context.timezone)
     const preferredTime = (args.preferred_time as PreferredTime | undefined) || 'any'
-    relevantWindows = context.windows.filter((window) => {
+    relevantWindows = scoredWindows.filter((window) => {
       const start = getWindowStart(window)
       if (relativeDayKey && getDateKey(start, context.timezone) !== relativeDayKey) return false
       return matchesPreferredTime(start, preferredTime, context.timezone)
@@ -697,11 +863,20 @@ function executeGetWeatherSummary(args: Record<string, unknown>, context: ToolCo
 }
 
 function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
-  if (!isScorableActivity(args.activity)) {
+  const activity = normalizeScorableActivity(args.activity)
+  if (!activity) {
     return { response: { error: 'Unsupported activity for weather scoring.' } }
   }
 
-  const durationMinutes = typeof args.duration_minutes === 'number' ? args.duration_minutes : 60
+  const commuteMode =
+    normalizeCommuteMode(args.commute_mode) ??
+    normalizeCommuteMode(args.requested_activity_label) ??
+    normalizeCommuteMode(args.activity)
+  const scoredWindows = getScoredWindowsForActivity(context.windows, context.preferences, activity, commuteMode)
+  const durationMinutes =
+    typeof args.duration_minutes === 'number' && Number.isFinite(args.duration_minutes)
+      ? Math.max(1, Math.round(args.duration_minutes))
+      : 60
   const relativeDayKey = resolveRelativeDay(args.relative_day as RelativeDay | undefined, context.now, context.timezone)
   const preferredTime = (args.preferred_time as PreferredTime | undefined) || 'any'
   const startDate = typeof args.start_date === 'string' ? args.start_date : undefined
@@ -710,7 +885,7 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
   const requiredSlots = Math.max(1, Math.ceil(durationMinutes / 30))
 
   const windowsByDay = new Map<string, TimeWindow[]>()
-  for (const window of context.windows) {
+  for (const window of scoredWindows) {
     const start = getWindowStart(window)
     const dateKey = getDateKey(start, context.timezone)
     if (relativeDayKey && dateKey !== relativeDayKey) continue
@@ -736,24 +911,28 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
     for (let index = 0; index <= sorted.length - requiredSlots; index++) {
       const block = sorted.slice(index, index + requiredSlots)
       const blockStart = getWindowStart(block[0])
-      const blockEnd = getWindowEnd(block[block.length - 1])
-      if (isTimeRangeBlockedForAnyActivity(context.preferences, blockStart, blockEnd, context.timezone)) {
+      const exactEnd = new Date(blockStart.getTime() + durationMinutes * 60 * 1000)
+      const scoringWindows = getOverlappingWindows(blockStart, exactEnd, block)
+
+      if (scoringWindows.length === 0) continue
+
+      if (isTimeRangeBlockedForAnyActivity(context.preferences, blockStart, exactEnd, context.timezone)) {
         blockedByPreferencesCount += 1
         continue
       }
-      const conflicts = getConflictingEvents(blockStart, blockEnd, context.events, context.timezone)
+      const conflicts = getConflictingEvents(blockStart, exactEnd, context.events, context.timezone)
       if (conflicts.length > 0) continue
 
-      const score = getAverageScore(block, args.activity)
+      const score = getAverageScore(scoringWindows, activity)
       if (score === null) continue
 
       candidates.push({
         startTime: blockStart.toISOString(),
-        endTime: blockEnd.toISOString(),
+        endTime: exactEnd.toISOString(),
         score,
         location: block[0].location,
-        weatherSummary: summarizeWeather(block),
-        windowIds: block.map((window) => window.id),
+        weatherSummary: summarizeWeather(scoringWindows),
+        windowIds: scoringWindows.map((window) => window.id),
       })
     }
   }
@@ -766,7 +945,7 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
     response: {
       count: topCandidates.length,
       requestedActivityLabel: typeof args.requested_activity_label === 'string' ? args.requested_activity_label : null,
-      scoredActivity: args.activity,
+      scoredActivity: activity,
       blockedByPreferencesCount,
       slots: topCandidates.map((candidate) => ({
         ...candidate,
@@ -777,19 +956,22 @@ function executeFindOptimalSlots(args: Record<string, unknown>, context: ToolCon
 }
 
 function executeScoreTimeRange(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
-  if (!isScorableActivity(args.activity)) {
+  const activity = normalizeScorableActivity(args.activity)
+  if (!activity) {
     return { response: { error: 'Unsupported activity for weather scoring.' } }
   }
 
+  const commuteMode = normalizeCommuteMode(args.commute_mode) ?? normalizeCommuteMode(args.activity)
+  const scoredWindows = getScoredWindowsForActivity(context.windows, context.preferences, activity, commuteMode)
   const startTime = new Date(String(args.start_time))
   const endTime = new Date(String(args.end_time))
-  const overlapping = getOverlappingWindows(startTime, endTime, context.windows)
+  const overlapping = getOverlappingWindows(startTime, endTime, scoredWindows)
   const conflicts = getConflictingEvents(startTime, endTime, context.events, context.timezone)
-  const blocked = buildBlockedPreferenceMessage(context.preferences, args.activity, startTime, endTime, context.timezone)
+  const blocked = buildBlockedPreferenceMessage(context.preferences, activity, startTime, endTime, context.timezone)
 
   return {
     response: {
-      score: getAverageScore(overlapping, args.activity),
+      score: getAverageScore(overlapping, activity),
       weatherSummary: summarizeWeather(overlapping),
       conflictCount: conflicts.length,
       conflicts,
@@ -854,7 +1036,7 @@ function executeListAtRiskEvents(args: Record<string, unknown>, context: ToolCon
 }
 
 function executeGetAccountSettings(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
-  const activity = isActivity(args.activity) ? args.activity : context.preferences.activity
+  const activity = normalizeActivityAlias(args.activity) ?? context.preferences.activity
   return {
     response: {
       settings: getSettingsSnapshot(context.preferences, activity),
@@ -864,7 +1046,7 @@ function executeGetAccountSettings(args: Record<string, unknown>, context: ToolC
 
 function executeUpdateAccountSettings(args: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
   const nextPreferences = normalizeUserPreferences(context.preferences)
-  const targetActivity = isActivity(args.activity) ? args.activity : nextPreferences.activity
+  const targetActivity = normalizeActivityAlias(args.activity) ?? nextPreferences.activity
   const appliedChanges: string[] = []
 
   if (typeof args.city === 'string' && args.city.trim().length > 0) {
@@ -1063,8 +1245,15 @@ function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolCon
     return { response: { status: 'invalid_time_range', message: 'The event end time must be after the start time.' } }
   }
 
-  const eventActivity = isActivity(args.activity) ? args.activity : undefined
-  const schedulingActivity = resolveSchedulingActivity(args.activity, context)
+  const eventActivity = normalizeActivityAlias(args.activity) ?? normalizeActivityAlias(args.title)
+  const commuteMode = normalizeCommuteMode(args.commute_mode) ?? normalizeCommuteMode(args.title) ?? normalizeCommuteMode(args.activity)
+  const scoredWindows = getScoredWindowsForActivity(
+    context.windows,
+    context.preferences,
+    normalizeScorableActivity(eventActivity),
+    commuteMode,
+  )
+  const schedulingActivity = eventActivity ?? resolveSchedulingActivity(args.activity, context)
   const blocked = buildBlockedPreferenceMessage(context.preferences, schedulingActivity, startTime, endTime, context.timezone)
   if (blocked) {
     return { response: blocked }
@@ -1099,7 +1288,7 @@ function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolCon
     suggestedAlternative: null,
   }
 
-  const weatherScore = computeWeatherScore(eventDraft, context.windows)
+  const weatherScore = computeWeatherScore(eventDraft, scoredWindows)
   if (weatherScore !== undefined) {
     eventDraft.weatherScore = weatherScore
   }
@@ -1112,7 +1301,7 @@ function executeDraftCreateEvent(args: Record<string, unknown>, context: ToolCon
       summary,
       preview: {
         ...eventDraft,
-        weatherSummary: summarizeWeather(getOverlappingWindows(startTime, endTime, context.windows)),
+        weatherSummary: summarizeWeather(getOverlappingWindows(startTime, endTime, scoredWindows)),
       },
     },
     pendingOperation: {
@@ -1137,7 +1326,14 @@ function executeDraftUpdateEvent(args: Record<string, unknown>, context: ToolCon
     if (argKey in args) {
       const value = args[argKey]
       if (typeof value === 'string') {
-        ;(changes as Record<string, unknown>)[field] = field === 'startTime' || field === 'endTime' ? new Date(value).toISOString() : value
+        if (field === 'activity') {
+          const normalizedActivity = normalizeActivityAlias(value)
+          if (normalizedActivity) {
+            changes.activity = normalizedActivity
+          }
+        } else {
+          ;(changes as Record<string, unknown>)[field] = field === 'startTime' || field === 'endTime' ? new Date(value).toISOString() : value
+        }
       }
     }
   }
@@ -1146,6 +1342,11 @@ function executeDraftUpdateEvent(args: Record<string, unknown>, context: ToolCon
   if (participants) {
     changes.participants = participants
   }
+
+  const commuteMode =
+    normalizeCommuteMode(args.commute_mode) ??
+    normalizeCommuteMode(args.title) ??
+    normalizeCommuteMode(args.activity)
 
   const nextEvent: CalendarEvent = {
     ...existingEvent,
@@ -1191,7 +1392,13 @@ function executeDraftUpdateEvent(args: Record<string, unknown>, context: ToolCon
   }
 
   nextEvent.suggestedAlternative = null
-  const weatherScore = computeWeatherScore(nextEvent, context.windows)
+  const scoredWindows = getScoredWindowsForActivity(
+    context.windows,
+    context.preferences,
+    normalizeScorableActivity(nextEvent.activity),
+    commuteMode,
+  )
+  const weatherScore = computeWeatherScore(nextEvent, scoredWindows)
   if (weatherScore !== undefined) {
     changes.weatherScore = weatherScore
   } else {
